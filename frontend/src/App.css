@@ -1320,9 +1320,22 @@ h1 {
   .topbar {
     padding: 0 16px;
   }
-  .search kbd,
-  .search input {
+  .search kbd {
     display: none;
+  }
+  .search {
+    min-width: 0;
+  }
+  .search input {
+    display: block;
+    min-width: 0;
+    font-size: 10px;
+  }
+  .topbar > .primary {
+    width: 40px;
+    padding: 10px;
+    font-size: 0;
+    flex: 0 0 40px;
   }
   .page-intro,
   .detail-title {
