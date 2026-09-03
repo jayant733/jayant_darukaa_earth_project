@@ -1,0 +1,17 @@
+alembic>=1.16.5
+bcrypt>=4.3.0
+email-validator>=2.3.0
+fastapi>=0.116.1
+geoalchemy2>=0.18.0
+psycopg[binary]>=3.2.9
+pyjwt>=2.10.1
+pydantic-settings>=2.10.1
+python-multipart>=0.0.20
+shapely>=2.1.1
+sqlalchemy>=2.0.43
+uvicorn[standard]>=0.35.0
+
+[dev]
+httpx>=0.28.1
+pytest>=8.4.1
+ruff>=0.12.11
