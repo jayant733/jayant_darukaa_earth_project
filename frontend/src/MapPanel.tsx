@@ -68,6 +68,33 @@ export function MapPanel({ projects, selected, onSelect }: Props) {
   }, [onSelect, projects, selected, token])
 
   if (!token) {
+    if (selected) {
+      const lngs = selected.polygon.map(([lng]) => lng)
+      const lats = selected.polygon.map(([, lat]) => lat)
+      const minLng = Math.min(...lngs)
+      const maxLng = Math.max(...lngs)
+      const minLat = Math.min(...lats)
+      const maxLat = Math.max(...lats)
+      const points = selected.polygon
+        .map(([lng, lat]) => {
+          const x = ((lng - minLng) / (maxLng - minLng || 1)) * 100
+          const y = (1 - (lat - minLat) / (maxLat - minLat || 1)) * 100
+          return `${x},${y}`
+        })
+        .join(' ')
+      return (
+        <div className="map-fallback site-map" aria-label={`${selected.name} site map`}>
+          <div className="map-grid" />
+          <svg className="site-polygon" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <polygon points={points} />
+          </svg>
+          <div className="site-map-label">
+            <span>{selected.country}</span>
+            {selected.coordinates[1].toFixed(2)}°, {selected.coordinates[0].toFixed(2)}°
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="map-fallback">
         <div className="map-grid" />
@@ -76,7 +103,7 @@ export function MapPanel({ projects, selected, onSelect }: Props) {
         <div className="continent c3" />
         {projects.map((project, index) => (
           <button
-            className={`fallback-pin pin-${index + 1} ${selected?.id === project.id ? 'is-selected' : ''}`}
+            className={`fallback-pin pin-${index + 1}`}
             key={project.id}
             onClick={() => onSelect(project)}
             aria-label={`Open ${project.name}`}
