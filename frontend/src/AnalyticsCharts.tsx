@@ -1,35 +1,57 @@
+import { useEffect, useRef } from 'react'
 import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
 import type { Project } from './data'
 
-const base: Highcharts.Options = {
-  chart: { backgroundColor: 'transparent', height: 245, spacing: [12, 4, 8, 0] },
-  title: { text: undefined },
-  credits: { enabled: false },
-  legend: { enabled: false },
-  xAxis: {
-    lineColor: '#d9d9d1',
-    tickColor: '#d9d9d1',
-    labels: { style: { color: '#75766e', fontSize: '11px' } },
-  },
-  yAxis: {
+function chartLib() {
+  const module = Highcharts as unknown as { default?: typeof Highcharts }
+  return module.default ?? Highcharts
+}
+
+function ChartFrame({ options }: { options: Highcharts.Options }) {
+  const host = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const node = host.current
+    if (!node) return
+    const chart = chartLib().chart(node, options)
+    return () => {
+      chart.destroy()
+    }
+  }, [options])
+
+  return <div ref={host} />
+}
+
+function sharedOptions(categories: string[]): Highcharts.Options {
+  return {
+    chart: { backgroundColor: 'transparent', height: 245, spacing: [12, 4, 8, 0] },
     title: { text: undefined },
-    gridLineColor: '#e5e5dd',
-    labels: { style: { color: '#75766e', fontSize: '11px' } },
-  },
-  tooltip: {
-    borderWidth: 0,
-    backgroundColor: '#122019',
-    style: { color: '#fff' },
-    shadow: false,
-  },
+    credits: { enabled: false },
+    legend: { enabled: false },
+    xAxis: {
+      categories,
+      lineColor: '#d9d9d1',
+      tickColor: '#d9d9d1',
+      labels: { style: { color: '#75766e', fontSize: '11px' } },
+    },
+    yAxis: {
+      title: { text: undefined },
+      gridLineColor: '#e5e5dd',
+      labels: { style: { color: '#75766e', fontSize: '11px' } },
+    },
+    tooltip: {
+      borderWidth: 0,
+      backgroundColor: '#122019',
+      style: { color: '#fff' },
+      shadow: false,
+    },
+  }
 }
 
 export function AnalyticsCharts({ project }: { project: Project }) {
   const categories = project.series.map((point) => point.year)
   const carbon: Highcharts.Options = {
-    ...base,
-    xAxis: { ...base.xAxis, categories },
+    ...sharedOptions(categories),
     series: [
       {
         type: 'areaspline',
@@ -49,9 +71,12 @@ export function AnalyticsCharts({ project }: { project: Project }) {
     ],
   }
   const biodiversity: Highcharts.Options = {
-    ...base,
-    xAxis: { ...base.xAxis, categories },
-    yAxis: { ...base.yAxis, min: 40, max: 100 },
+    ...sharedOptions(categories),
+    yAxis: {
+      ...sharedOptions(categories).yAxis,
+      min: 40,
+      max: 100,
+    },
     series: [
       {
         type: 'column',
@@ -63,6 +88,7 @@ export function AnalyticsCharts({ project }: { project: Project }) {
       },
     ],
   }
+
   return (
     <div className="charts-grid">
       <section className="chart-card">
@@ -73,7 +99,7 @@ export function AnalyticsCharts({ project }: { project: Project }) {
           </div>
           <span className="chart-unit">tCO₂e</span>
         </div>
-        <HighchartsReact highcharts={Highcharts} options={carbon} />
+        <ChartFrame key={`${project.id}-carbon`} options={carbon} />
       </section>
       <section className="chart-card">
         <div className="section-heading">
@@ -83,7 +109,7 @@ export function AnalyticsCharts({ project }: { project: Project }) {
           </div>
           <span className="chart-unit">INDEX / 100</span>
         </div>
-        <HighchartsReact highcharts={Highcharts} options={biodiversity} />
+        <ChartFrame key={`${project.id}-biodiversity`} options={biodiversity} />
       </section>
     </div>
   )
