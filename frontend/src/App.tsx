@@ -81,17 +81,36 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (name: string) => v
         {mode === 'register' && (
           <label>
             Name
-            <input required value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              id="register-name"
+              name="name"
+              autoComplete="name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </label>
         )}
         <label>
           Email
-          <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input
+            id="auth-email"
+            name="email"
+            autoComplete="email"
+            required
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
         </label>
         <label>
           Password
           <input
+            id="auth-password"
+            name="password"
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             required
+            minLength={8}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -828,6 +847,9 @@ function CreateWizard({
                 <label>
                   Project name
                   <input
+                    id="project-name"
+                    name="projectName"
+                    autoComplete="off"
                     value={draft.name}
                     placeholder="Atlantic Forest Recovery"
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -836,6 +858,9 @@ function CreateWizard({
                 <label>
                   Country
                   <input
+                    id="project-country"
+                    name="country"
+                    autoComplete="country-name"
                     value={draft.country}
                     placeholder="Brazil"
                     onChange={(e) => setDraft({ ...draft, country: e.target.value })}
@@ -844,6 +869,8 @@ function CreateWizard({
                 <label className="full">
                   Purpose
                   <textarea
+                    id="project-purpose"
+                    name="description"
                     value={draft.description}
                     placeholder="Restore fragmented habitat and measure long-term carbon sequestration."
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
@@ -1063,6 +1090,10 @@ function App() {
           <div className="search">
             <Search size={16} />
             <input
+              id="project-search"
+              name="projectSearch"
+              aria-label="Search projects and regions"
+              autoComplete="off"
               placeholder="Search projects, sites, regions…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
