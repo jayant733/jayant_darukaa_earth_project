@@ -119,4 +119,3 @@ export const projects: Project[] = [
     series: series(44600, 73),
   },
 ]
-

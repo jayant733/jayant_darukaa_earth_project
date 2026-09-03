@@ -93,4 +93,3 @@ export function MapPanel({ projects, selected, onSelect }: Props) {
   }
   return <div className="mapbox-container" ref={container} />
 }
-

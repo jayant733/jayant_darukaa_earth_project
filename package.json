@@ -1,0 +1,27 @@
+{
+  "name": "darukaa-earth",
+  "version": "1.0.0",
+  "description": "Geospatial carbon and biodiversity intelligence platform",
+  "private": true,
+  "scripts": {
+    "lint": "npm --prefix frontend run lint",
+    "format": "prettier --write \"frontend/**/*.{ts,tsx,css,json}\" && backend/.venv/bin/ruff format backend",
+    "test": "npm --prefix frontend run build",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://origin.cursor.com/git/wisp-qa/tmp-f3e548d49ed7629f.git"
+  },
+  "keywords": ["climate-tech", "postgis", "mapbox"],
+  "license": "MIT",
+  "lint-staged": {
+    "frontend/**/*.{ts,tsx,css,json,md}": "prettier --write",
+    "backend/**/*.py": "sh scripts/lint-python.sh"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.6"
+  }
+}

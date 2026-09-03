@@ -88,4 +88,3 @@ export function AnalyticsCharts({ project }: { project: Project }) {
     </div>
   )
 }
-

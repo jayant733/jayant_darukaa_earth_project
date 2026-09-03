@@ -1,6 +1,8 @@
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from geoalchemy2 import Geography
 from geoalchemy2.functions import ST_AsGeoJSON, ST_GeomFromGeoJSON
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -115,7 +117,7 @@ def list_sites(db: Session = Depends(get_db), _: User = Depends(current_user)) -
             {
                 "type": "Feature",
                 "id": str(site.id),
-                "geometry": __import__("json").loads(geometry),
+                "geometry": json.loads(geometry),
                 "properties": {
                     "id": str(site.id),
                     "name": site.name,
@@ -150,11 +152,51 @@ def create_project(
         geometry = item.geometry
         if geometry.get("type") != "Polygon":
             raise HTTPException(status_code=422, detail="Sites must be GeoJSON Polygons")
-        geom_expr = ST_GeomFromGeoJSON(__import__("json").dumps(geometry))
+        geom_expr = ST_GeomFromGeoJSON(json.dumps(geometry))
         area = db.scalar(select(func.ST_Area(func.cast(geom_expr, Geography)) / 10_000))
-        db.add(Site(project_id=project.id, name=item.name, geom=geom_expr, area_ha=area))
+        db.add(
+            Site(
+                project_id=project.id,
+                name=item.name,
+                geom=geom_expr,
+                area_ha=float(area or 0),
+            )
+        )
     db.commit()
     return {"id": str(project.id), "message": "Project created"}
 
 
-from geoalchemy2 import Geography  # noqa: E402
+@router.get("/sites/{site_id}")
+def get_site(
+    site_id: uuid.UUID, db: Session = Depends(get_db), _: User = Depends(current_user)
+) -> dict:
+    row = db.execute(
+        select(Site, ST_AsGeoJSON(Site.geom), Project)
+        .join(Project)
+        .where(Site.id == site_id)
+        .options(selectinload(Site.observations))
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Site not found")
+    site, geometry, project = row
+    latest = site.observations[-1] if site.observations else None
+    return {
+        "id": str(site.id),
+        "name": site.name,
+        "area_ha": site.area_ha,
+        "project_id": str(project.id),
+        "project": project.name,
+        "geometry": json.loads(geometry),
+        "carbon_tco2e": latest.carbon_tco2e if latest else 0,
+        "biodiversity_index": latest.biodiversity_index if latest else 0,
+        "progress": latest.restoration_progress if latest else 0,
+        "series": [
+            {
+                "date": point.observed_on.isoformat(),
+                "carbon": point.carbon_tco2e,
+                "biodiversity": point.biodiversity_index,
+                "progress": point.restoration_progress,
+            }
+            for point in site.observations
+        ],
+    }
