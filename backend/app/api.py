@@ -154,7 +154,16 @@ def create_project(
         if geometry.get("type") != "Polygon":
             raise HTTPException(status_code=422, detail="Sites must be GeoJSON Polygons")
         geom_expr = ST_GeomFromGeoJSON(json.dumps(geometry))
-        area = db.scalar(select(func.ST_Area(func.cast(geom_expr, Geography)) / 10_000))
+        valid, area = db.execute(
+            select(
+                func.ST_IsValid(geom_expr),
+                func.ST_Area(func.cast(geom_expr, Geography)) / 10_000,
+            )
+        ).one()
+        if not valid:
+            raise HTTPException(
+                status_code=422, detail=f"Site '{item.name}' has a self-intersecting boundary"
+            )
         site = Site(
             project_id=project.id,
             name=item.name,

@@ -104,6 +104,49 @@ def test_non_polygon_geometry_is_rejected(client, auth):
     assert response.status_code == 422
 
 
+def test_self_intersecting_polygon_is_rejected(client, auth):
+    bowtie = {
+        "type": "Polygon",
+        "coordinates": [[[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0], [0.0, 0.0]]],
+    }
+    response = client.post(
+        "/api/projects",
+        headers=auth,
+        json={
+            "name": "Bowtie Project",
+            "country": "Brazil",
+            "sites": [{"name": "Bowtie Site", "geometry": bowtie}],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_drawn_site_area_is_realistic(client, auth):
+    # A boundary spanning the full draw canvas should measure tens of thousands of
+    # hectares, not billions: regression guard for the global-projection bug.
+    ring = [
+        [35.33, -0.375],
+        [35.83, -0.375],
+        [35.83, -0.725],
+        [35.33, -0.725],
+        [35.33, -0.375],
+    ]
+    created = client.post(
+        "/api/projects",
+        headers=auth,
+        json={
+            "name": "Canvas Extent Project",
+            "country": "Kenya",
+            "sites": [
+                {"name": "Canvas Site", "geometry": {"type": "Polygon", "coordinates": [ring]}}
+            ],
+        },
+    )
+    assert created.status_code == 201
+    detail = client.get(f"/api/projects/{created.json()['id']}", headers=auth).json()
+    assert 100_000 < detail["area_ha"] < 300_000
+
+
 def test_missing_project_returns_not_found(client, auth):
     response = client.get("/api/projects/00000000-0000-0000-0000-000000000000", headers=auth)
     assert response.status_code == 404

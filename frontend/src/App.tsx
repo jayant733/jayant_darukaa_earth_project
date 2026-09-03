@@ -447,26 +447,57 @@ function ErrorState({ message, onBack }: { message: string; onBack?: () => void 
 
 const emptyDraft = { name: '', country: '', description: '', points: [] as [number, number][] }
 
+// The draw canvas is a local window, not the whole globe: a boundary drawn edge to edge
+// covers roughly 55km x 39km so areas land in the same range as real restoration sites.
+const WINDOW_LNG = 0.5
+const WINDOW_LAT = 0.35
+
+const COUNTRY_CENTERS: Record<string, [number, number]> = {
+  brazil: [-62.22, -3.46],
+  bangladesh: [89.18, 21.95],
+  'dr congo': [22.05, -0.68],
+  kenya: [35.58, -0.55],
+  indonesia: [114.46, 0.95],
+  'united states': [-120.1, 38.71],
+  india: [78.96, 20.59],
+  colombia: [-74.3, 4.57],
+  peru: [-75.02, -9.19],
+  tanzania: [34.89, -6.37],
+}
+
+function countryCenter(country: string): [number, number] {
+  return COUNTRY_CENTERS[country.trim().toLowerCase()] ?? [12.35, 6.42]
+}
+
 function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () => void }) {
   const [step, setStep] = useState(1)
   const [draft, setDraft] = useState(emptyDraft)
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
+  // Points are stored as canvas fractions and projected to coordinates only on submit,
+  // so the preview and the stored geometry always agree.
   function addPoint(event: React.MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width
     const y = (event.clientY - rect.top) / rect.height
-    const lng = Number((x * 360 - 180).toFixed(3))
-    const lat = Number((90 - y * 180).toFixed(3))
-    setDraft((current) => ({ ...current, points: [...current.points, [lng, lat]] }))
+    setDraft((current) => ({ ...current, points: [...current.points, [x, y]] }))
+  }
+
+  function toCoordinates(points: [number, number][]): [number, number][] {
+    const [centerLng, centerLat] = countryCenter(draft.country)
+    return points.map(([x, y]) => [
+      Number((centerLng + (x - 0.5) * WINDOW_LNG).toFixed(5)),
+      Number((centerLat - (y - 0.5) * WINDOW_LAT).toFixed(5)),
+    ])
   }
 
   async function submit() {
     setPending(true)
     setError('')
     try {
-      const ring = [...draft.points, draft.points[0]]
+      const ring = toCoordinates(draft.points)
+      ring.push(ring[0])
       await createProject({
         name: draft.name,
         country: draft.country,
@@ -548,30 +579,22 @@ function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () =
               <span className="eyebrow">02 — Geospatial sites</span>
               <h3>Draw the project boundary</h3>
               <p>
-                Click the map to place at least three points. The polygon is stored in PostGIS and
-                its area is computed server-side.
+                Click to place at least three points around {draft.country || 'the project area'}.
+                The polygon is stored in PostGIS and its area is computed server-side.
               </p>
               <div className="draw-canvas" onClick={addPoint}>
                 {draft.points.length > 2 && (
                   <svg className="draw-preview" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <polygon
-                      points={draft.points
-                        .map(
-                          ([lng, lat]) =>
-                            `${((lng + 180) / 360) * 100},${((90 - lat) / 180) * 100}`,
-                        )
-                        .join(' ')}
+                      points={draft.points.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')}
                     />
                   </svg>
                 )}
-                {draft.points.map(([lng, lat], index) => (
+                {draft.points.map(([x, y], index) => (
                   <i
-                    key={`${lng}-${lat}-${index}`}
+                    key={`${x}-${y}-${index}`}
                     className="draw-point"
-                    style={{
-                      left: `${((lng + 180) / 360) * 100}%`,
-                      top: `${((90 - lat) / 180) * 100}%`,
-                    }}
+                    style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
                   />
                 ))}
                 <span>
