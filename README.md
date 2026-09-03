@@ -19,7 +19,7 @@ React (Vite)  --JWT-->  FastAPI
 - The API owns identity (JWT), persistence, GeoJSON conversion, and derived Project Health scores.
 - PostGIS stores site polygons (`GEOMETRY(Polygon, 4326)`) and supports area calculation via `ST_Area(geom::geography)`.
 
-The frontend can run without a live API or Mapbox token. Demo login (`admin@darukaa.earth` / `darukaa-demo`) unlocks a seeded portfolio so the product remains reviewable. Satellite tiles appear when `VITE_MAPBOX_TOKEN` is set.
+The SPA has no mock data. Every screen reads from the API: login issues a JWT, the map renders the GeoJSON returned by `/api/sites`, and the wizard POSTs a polygon that PostGIS measures server-side. Satellite tiles appear when `VITE_MAPBOX_TOKEN` is set; without it the map falls back to an equirectangular projection of the same live geometry.
 
 ## Why this dataset
 
@@ -46,7 +46,18 @@ Alembic revision `0001` enables PostGIS and creates these tables. Locally, FastA
 docker compose up -d
 ```
 
-Postgres/PostGIS listens on **15432**. If Docker is unavailable, point `DATABASE_URL` at any PostGIS instance.
+Postgres/PostGIS listens on **15432**.
+
+Without Docker, install PostgreSQL and PostGIS directly:
+
+```bash
+sudo apt-get install -y postgresql-16 postgresql-16-postgis-3
+sudo pg_ctlcluster 16 main start
+sudo -u postgres psql -c "CREATE ROLE darukaa LOGIN PASSWORD 'darukaa' SUPERUSER;"
+sudo -u postgres psql -c "CREATE DATABASE darukaa OWNER darukaa;"
+sudo -u postgres psql -c "CREATE DATABASE darukaa_test OWNER darukaa;"
+sudo -u postgres psql -d darukaa -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
 
 ### 2. API
 
@@ -97,8 +108,10 @@ Manual checks:
 npm --prefix frontend run lint
 npm --prefix frontend run build
 backend/.venv/bin/ruff check backend
-backend/.venv/bin/pytest
+cd backend && .venv/bin/pytest
 ```
+
+The pytest suite is a real integration suite: it runs FastAPI against PostGIS (`darukaa_test`) and covers auth, authorization, the project/site lifecycle, polygon area computation, and error paths.
 
 ## CI/CD
 
@@ -141,7 +154,7 @@ Until those secrets are present, CI still gates quality; deploy steps no-op.
 - **JWT in `localStorage`** keeps the SPA deployable on Vercel without a shared cookie domain. XSS is the cost; cookies would be better with a reverse proxy.
 - **Highcharts** is used for a denser analytics look. It is acceptable for a non-commercial hackathon demo; Chart.js would be the fully open-source alternative.
 - **Create-all plus Alembic** makes first boot easy; production should rely on `alembic upgrade head` (the Docker image does).
-- **Demo dataset in the client** keeps the dashboard reviewable when PostGIS is down. Live writes go through the API when `VITE_API_URL` is set.
+- **Server-computed area and health.** `area_ha` comes from `ST_Area(geom::geography)` rather than the browser, and Project Health is derived per request so the score can never drift from stored observations.
 
 ## Product map
 
