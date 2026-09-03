@@ -22,6 +22,7 @@ import { MapPanel } from './MapPanel'
 import {
   clearSession,
   createProject,
+  getMe,
   getProject,
   getProjects,
   getSite,
@@ -86,6 +87,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (name: string) => v
               name="name"
               autoComplete="name"
               required
+              minLength={2}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -238,7 +240,7 @@ function HealthCard({
   health: number
   biodiversity: number
   progress: number
-  carbonShare: number
+  carbonShare?: number
 }) {
   return (
     <section className="health-card">
@@ -249,7 +251,7 @@ function HealthCard({
         <span>{healthLabel(health)}</span>
       </div>
       {[
-        ['Carbon delivery', Math.round(carbonShare)],
+        ...(carbonShare === undefined ? [] : [['Carbon delivery', Math.round(carbonShare)]]),
         ['Biodiversity', Math.round(biodiversity)],
         ['Restoration', Math.round(progress)],
       ].map(([label, score]) => (
@@ -313,7 +315,7 @@ function ProjectView({
   }
   if (!project) return <LoadingState label="Loading project analytics" />
 
-  const carbonShare = Math.min((project.carbon_tco2e / (project.carbon_tco2e || 1)) * 92, 100)
+  const carbonShare = Math.min((project.carbon_tco2e / project.carbon_target) * 100, 100)
 
   return (
     <div className="detail-view">
@@ -384,7 +386,7 @@ function ProjectView({
   )
 }
 
-function SiteView({ id, back }: { id: string; back: () => void }) {
+function SiteView({ id, back }: { id: string; back: (projectId: string) => void }) {
   const [site, setSite] = useState<SiteDetail>()
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -403,7 +405,7 @@ function SiteView({ id, back }: { id: string; back: () => void }) {
     return (
       <ErrorState
         message={error}
-        onBack={back}
+        onBack={() => window.history.back()}
         onRetry={() => {
           setError('')
           setSite(undefined)
@@ -416,7 +418,7 @@ function SiteView({ id, back }: { id: string; back: () => void }) {
 
   return (
     <div className="detail-view">
-      <button className="back-button" onClick={back}>
+      <button className="back-button" onClick={() => back(site.project_id)}>
         <ArrowLeft size={16} /> Back to project
       </button>
       <div className="detail-title">
@@ -461,7 +463,6 @@ function SiteView({ id, back }: { id: string; back: () => void }) {
           health={Math.round(site.biodiversity_index * 0.5 + site.progress * 0.5)}
           biodiversity={site.biodiversity_index}
           progress={site.progress}
-          carbonShare={92}
         />
       </div>
       <AnalyticsCharts id={site.id} series={site.series} />
@@ -979,7 +980,8 @@ function CreateWizard({
 function App() {
   const location = useLocation()
   const navigate = useNavigate()
-  const [userName, setUserName] = useState(() => readSession()?.user.name ?? '')
+  const [userName, setUserName] = useState('')
+  const [sessionChecked, setSessionChecked] = useState(() => !readSession())
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [sites, setSites] = useState<SiteFeature[]>([])
   const [loading, setLoading] = useState(true)
@@ -993,6 +995,18 @@ function App() {
   const reload = useCallback(() => {
     setLoading(true)
     setRefreshKey((key) => key + 1)
+  }, [])
+
+  useEffect(() => {
+    const session = readSession()
+    if (!session) return
+    getMe()
+      .then((user) => setUserName(user.name))
+      .catch(() => {
+        clearSession()
+        setUserName('')
+      })
+      .finally(() => setSessionChecked(true))
   }, [])
 
   useEffect(() => {
@@ -1034,13 +1048,21 @@ function App() {
     [projects],
   )
 
-  const visible = useMemo(
-    () =>
-      projects.filter((project) =>
-        `${project.name} ${project.country}`.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [projects, query],
-  )
+  const visible = useMemo(() => {
+    const term = query.toLowerCase()
+    const siteProjectIds = new Set(
+      sites
+        .filter((site) =>
+          `${site.properties.name} ${site.properties.project}`.toLowerCase().includes(term),
+        )
+        .map((site) => site.properties.project_id),
+    )
+    return projects.filter(
+      (project) =>
+        `${project.name} ${project.country}`.toLowerCase().includes(term) ||
+        siteProjectIds.has(project.id),
+    )
+  }, [projects, query, sites])
 
   const openProject = useCallback((id: string) => navigate(`/projects/${id}`), [navigate])
   const openSite = useCallback(
@@ -1053,6 +1075,10 @@ function App() {
     ? (location.pathname.slice(1) as 'projects' | 'sites' | 'analytics' | 'settings')
     : undefined
   const routeFound = location.pathname === '/' || Boolean(projectMatch || siteMatch || section)
+
+  if (!sessionChecked) {
+    return <LoadingState label="Verifying your session" />
+  }
 
   if (!userName) {
     return (
@@ -1087,18 +1113,22 @@ function App() {
           <button className="menu-button" onClick={() => setMenu(true)} aria-label="Open menu">
             <Menu />
           </button>
-          <div className="search">
-            <Search size={16} />
-            <input
-              id="project-search"
-              name="projectSearch"
-              aria-label="Search projects and regions"
-              autoComplete="off"
-              placeholder="Search projects, sites, regions…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
+          {location.pathname === '/' ? (
+            <div className="search">
+              <Search size={16} />
+              <input
+                id="project-search"
+                name="projectSearch"
+                aria-label="Search projects, sites and regions"
+                autoComplete="off"
+                placeholder="Search projects, sites, regions…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="topbar-spacer" />
+          )}
           <button className="primary" onClick={() => setWizard(true)}>
             <Plus size={16} /> New project
           </button>
@@ -1128,7 +1158,7 @@ function App() {
           <SiteView
             key={siteMatch.params.id}
             id={siteMatch.params.id}
-            back={() => navigate('/sites')}
+            back={(projectId) => navigate(`/projects/${projectId}`)}
           />
         )}
         {routeFound && !error && !loading && section && (

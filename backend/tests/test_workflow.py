@@ -73,6 +73,7 @@ def test_project_lifecycle_computes_geospatial_metrics(client, auth):
     assert detail["site_count"] == 1
     assert detail["area_ha"] > 0
     assert detail["carbon_tco2e"] == 20_000
+    assert detail["carbon_target"] == 40_000
     assert 0 <= detail["health"] <= 100
     assert len(detail["series"]) == 1
 

@@ -55,7 +55,9 @@ class Site(Base):
     area_ha: Mapped[float] = mapped_column(Float)
     project: Mapped[Project] = relationship(back_populates="sites")
     observations: Mapped[list["MetricObservation"]] = relationship(
-        back_populates="site", cascade="all, delete-orphan"
+        back_populates="site",
+        cascade="all, delete-orphan",
+        order_by="MetricObservation.observed_on",
     )
 
 

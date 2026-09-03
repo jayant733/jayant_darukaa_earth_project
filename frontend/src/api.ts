@@ -4,6 +4,7 @@ export type ProjectSummary = {
   country: string
   description: string
   status: string
+  carbon_target: number
   site_count: number
   area_ha: number
   carbon_tco2e: number
@@ -148,6 +149,7 @@ export function register(name: string, email: string, password: string) {
   })
 }
 
+export const getMe = () => request<Session['user']>('/auth/me')
 export const getProjects = () => request<ProjectSummary[]>('/projects')
 export const getProject = (id: string) => request<ProjectDetail>(`/projects/${id}`)
 export const getSites = () => request<SiteCollection>('/sites')

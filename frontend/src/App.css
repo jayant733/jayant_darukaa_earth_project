@@ -226,6 +226,9 @@ button {
   flex: 1;
   max-width: 440px;
 }
+.topbar-spacer {
+  flex: 1;
+}
 .search input {
   border: 0;
   outline: 0;

@@ -133,6 +133,8 @@ Enable PostGIS on Render Postgres (`CREATE EXTENSION postgis;`) and set `CORS_OR
 | `VERCEL_TOKEN` | Vercel CLI |
 | `VERCEL_ORG_ID` | Vercel project |
 | `VERCEL_PROJECT_ID` | Vercel project |
+| `VITE_API_URL` | Public Render API URL ending in `/api` |
+| `VITE_MAPBOX_TOKEN` | Public Mapbox token used by the production build |
 
 Until those secrets are present, CI still gates quality; deploy steps no-op.
 

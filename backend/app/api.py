@@ -58,6 +58,7 @@ def project_summary(project: Project) -> dict:
         "country": project.country,
         "description": project.description,
         "status": project.status.value,
+        "carbon_target": project.carbon_target,
         "site_count": len(project.sites),
         "area_ha": round(sum(site.area_ha for site in project.sites), 1),
         "carbon_tco2e": round(carbon, 1),
