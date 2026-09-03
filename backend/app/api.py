@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from geoalchemy2 import Geography
@@ -154,12 +155,21 @@ def create_project(
             raise HTTPException(status_code=422, detail="Sites must be GeoJSON Polygons")
         geom_expr = ST_GeomFromGeoJSON(json.dumps(geometry))
         area = db.scalar(select(func.ST_Area(func.cast(geom_expr, Geography)) / 10_000))
+        site = Site(
+            project_id=project.id,
+            name=item.name,
+            geom=geom_expr,
+            area_ha=round(float(area or 0), 1),
+        )
+        db.add(site)
+        db.flush()
         db.add(
-            Site(
-                project_id=project.id,
-                name=item.name,
-                geom=geom_expr,
-                area_ha=float(area or 0),
+            MetricObservation(
+                site_id=site.id,
+                observed_on=date.today(),
+                carbon_tco2e=item.carbon_tco2e,
+                biodiversity_index=item.biodiversity_index,
+                restoration_progress=item.restoration_progress,
             )
         )
     db.commit()

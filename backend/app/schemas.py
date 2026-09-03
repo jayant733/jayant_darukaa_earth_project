@@ -34,6 +34,9 @@ class AuthResponse(BaseModel):
 class SiteCreate(BaseModel):
     name: str = Field(min_length=2, max_length=180)
     geometry: dict
+    carbon_tco2e: float = Field(default=0, ge=0)
+    biodiversity_index: float = Field(default=50, ge=0, le=100)
+    restoration_progress: float = Field(default=0, ge=0, le=100)
 
 
 class ProjectCreate(BaseModel):

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Highcharts from 'highcharts'
-import type { Project } from './data'
+import type { SeriesPoint } from './api'
 
 function chartLib() {
   const module = Highcharts as unknown as { default?: typeof Highcharts }
@@ -48,15 +48,27 @@ function sharedOptions(categories: string[]): Highcharts.Options {
   }
 }
 
-export function AnalyticsCharts({ project }: { project: Project }) {
-  const categories = project.series.map((point) => point.year)
+export function AnalyticsCharts({ id, series }: { id: string; series: SeriesPoint[] }) {
+  if (series.length === 0) {
+    return (
+      <div className="charts-grid">
+        <section className="chart-card empty-chart">
+          <span className="eyebrow">Performance over time</span>
+          <h3>No observations yet</h3>
+          <p>Metrics appear here once this landscape has recorded field measurements.</p>
+        </section>
+      </div>
+    )
+  }
+
+  const categories = series.map((point) => new Date(point.date).getFullYear().toString())
   const carbon: Highcharts.Options = {
     ...sharedOptions(categories),
     series: [
       {
         type: 'areaspline',
         name: 'Carbon',
-        data: project.series.map((point) => point.carbon),
+        data: series.map((point) => point.carbon),
         color: '#1b4d3a',
         fillColor: {
           linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
@@ -72,16 +84,12 @@ export function AnalyticsCharts({ project }: { project: Project }) {
   }
   const biodiversity: Highcharts.Options = {
     ...sharedOptions(categories),
-    yAxis: {
-      ...sharedOptions(categories).yAxis,
-      min: 40,
-      max: 100,
-    },
+    yAxis: { ...sharedOptions(categories).yAxis, min: 0, max: 100 },
     series: [
       {
         type: 'column',
         name: 'Biodiversity',
-        data: project.series.map((point) => point.biodiversity),
+        data: series.map((point) => point.biodiversity),
         color: '#93aa87',
         borderWidth: 0,
         borderRadius: 2,
@@ -99,7 +107,7 @@ export function AnalyticsCharts({ project }: { project: Project }) {
           </div>
           <span className="chart-unit">tCO₂e</span>
         </div>
-        <ChartFrame key={`${project.id}-carbon`} options={carbon} />
+        <ChartFrame key={`${id}-carbon`} options={carbon} />
       </section>
       <section className="chart-card">
         <div className="section-heading">
@@ -109,7 +117,7 @@ export function AnalyticsCharts({ project }: { project: Project }) {
           </div>
           <span className="chart-unit">INDEX / 100</span>
         </div>
-        <ChartFrame key={`${project.id}-biodiversity`} options={biodiversity} />
+        <ChartFrame key={`${id}-biodiversity`} options={biodiversity} />
       </section>
     </div>
   )

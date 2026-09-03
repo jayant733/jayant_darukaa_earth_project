@@ -15,7 +15,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-    status = sa.Enum("active", "planning", "completed", name="projectstatus")
+    status = postgresql.ENUM(
+        "active", "planning", "completed", name="projectstatus", create_type=False
+    )
     status.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "users",
@@ -71,4 +73,4 @@ def downgrade() -> None:
     op.drop_table("sites")
     op.drop_table("projects")
     op.drop_table("users")
-    sa.Enum(name="projectstatus").drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(name="projectstatus").drop(op.get_bind(), checkfirst=True)

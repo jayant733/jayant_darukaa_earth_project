@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from geoalchemy2 import Geometry
@@ -22,7 +22,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     projects: Mapped[list["Project"]] = relationship(back_populates="creator")
 
 
@@ -38,7 +38,7 @@ class Project(Base):
         Enum(ProjectStatus), default=ProjectStatus.planning
     )
     carbon_target: Mapped[float] = mapped_column(Float, default=100_000)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     creator: Mapped[User] = relationship(back_populates="projects")
     sites: Mapped[list["Site"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
