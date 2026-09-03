@@ -87,13 +87,15 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
         el.className = 'map-marker'
         el.setAttribute('aria-label', `Open ${site.properties.name}`)
         el.onclick = () => onSelect(site)
+        const popup = document.createElement('div')
+        const title = document.createElement('strong')
+        const details = document.createElement('span')
+        title.textContent = site.properties.project
+        details.textContent = `${site.properties.name} · ${site.properties.area_ha.toLocaleString()} ha`
+        popup.append(title, details)
         new mapboxgl.Marker({ element: el })
           .setLngLat(centroid(site.geometry))
-          .setPopup(
-            new mapboxgl.Popup({ offset: 20, closeButton: false }).setHTML(
-              `<strong>${site.properties.project}</strong><span>${site.properties.name} · ${site.properties.area_ha.toLocaleString()} ha</span>`,
-            ),
-          )
+          .setPopup(new mapboxgl.Popup({ offset: 20, closeButton: false }).setDOMContent(popup))
           .addTo(map)
       })
     })
