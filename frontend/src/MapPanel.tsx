@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Map as MapIcon } from 'lucide-react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import type { SiteFeature } from './api'
@@ -36,23 +37,35 @@ function projectRing(ring: [number, number][]) {
 
 export function MapPanel({ sites, focused, onSelect }: Props) {
   const container = useRef<HTMLDivElement>(null)
-  const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
+  const configuredToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
+  const token = configuredToken?.startsWith('pk.') ? configuredToken : undefined
+  const [mapFailed, setMapFailed] = useState(false)
+  const [mapReady, setMapReady] = useState(false)
   const center = useMemo<[number, number]>(() => (focused ? centroid(focused) : [18, 8]), [focused])
 
   useEffect(() => {
-    if (!container.current || !token) return
-    mapboxgl.accessToken = token
-    const map = new mapboxgl.Map({
-      container: container.current,
-      style: 'mapbox://styles/mapbox/satellite-streets-v12',
-      center,
-      zoom: focused ? 6.4 : 1.35,
-      projection: 'mercator',
-      attributionControl: false,
-    })
+    if (!container.current || !token || mapFailed) return
+    let map: mapboxgl.Map
+    try {
+      mapboxgl.accessToken = token
+      map = new mapboxgl.Map({
+        container: container.current,
+        style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        center,
+        zoom: focused ? 6.4 : 1.35,
+        projection: 'mercator',
+        attributionControl: false,
+      })
+    } catch {
+      queueMicrotask(() => setMapFailed(true))
+      return
+    }
+    const failGracefully = () => setMapFailed(true)
+    map.once('error', failGracefully)
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right')
     map.addControl(new mapboxgl.AttributionControl({ compact: true }))
     map.on('load', () => {
+      setMapReady(true)
       map.addSource('sites', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: sites },
@@ -99,17 +112,30 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
           .addTo(map)
       })
     })
-    return () => map.remove()
-  }, [center, focused, onSelect, sites, token])
+    return () => {
+      map.off('error', failGracefully)
+      map.remove()
+    }
+  }, [center, focused, mapFailed, onSelect, sites, token])
 
-  if (token) {
-    return <div className="mapbox-container" ref={container} />
+  if (token && !mapFailed) {
+    return (
+      <div className="mapbox-wrap">
+        <div className="mapbox-container" ref={container} />
+        {!mapReady && (
+          <div className="map-loading" role="status">
+            <span />
+            Loading satellite map…
+          </div>
+        )}
+      </div>
+    )
   }
 
   if (focused) {
     const [lng, lat] = center
     return (
-      <div className="map-fallback site-map">
+      <div className="map-fallback site-map" aria-label="Simplified site boundary map">
         <div className="map-grid" />
         <svg className="site-polygon" viewBox="0 0 100 100" preserveAspectRatio="none">
           <polygon points={projectRing(focused.coordinates[0])} />
@@ -118,16 +144,27 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
           <span>Site boundary</span>
           {lat.toFixed(2)}°, {lng.toFixed(2)}°
         </div>
+        <div className="map-token-note">
+          <span>Basic map mode</span>
+          Satellite imagery is temporarily unavailable
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="map-fallback">
+    <div className="map-fallback" aria-label="Simplified project map">
       <div className="map-grid" />
       <div className="continent c1" />
       <div className="continent c2" />
       <div className="continent c3" />
+      {sites.length === 0 && (
+        <div className="map-empty">
+          <MapIcon />
+          <strong>No sites to display</strong>
+          <span>Create a project and draw its first boundary.</span>
+        </div>
+      )}
       {sites.map((site) => {
         const [lng, lat] = centroid(site.geometry)
         return (
@@ -146,8 +183,8 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
         )
       })}
       <div className="map-token-note">
-        <span>Mapbox preview mode</span>
-        Add <code>VITE_MAPBOX_TOKEN</code> for satellite tiles
+        <span>Basic map mode</span>
+        Satellite imagery is temporarily unavailable
       </div>
     </div>
   )

@@ -73,25 +73,65 @@ export function clearSession() {
   localStorage.removeItem(SESSION_KEY)
 }
 
+const REQUEST_TIMEOUT_MS = 15_000
+
+function friendlyError(status: number, detail?: unknown) {
+  if (status === 400 || status === 422) {
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return (
+        detail
+          .map((issue) => issue?.msg)
+          .filter(Boolean)
+          .join('. ') || 'Check the form and try again.'
+      )
+    }
+    return 'Check the information you entered and try again.'
+  }
+  if (status === 403) return 'You do not have permission to complete this action.'
+  if (status === 404) return 'The requested item could not be found.'
+  if (status === 409) return typeof detail === 'string' ? detail : 'This item already exists.'
+  if (status >= 500) return 'Darukaa is temporarily unavailable. Please try again shortly.'
+  return 'We could not complete that request. Please try again.'
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const session = readSession()
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      ...init.headers,
-    },
-  })
-  if (response.status === 401) {
-    clearSession()
-    throw new Error('Your session expired. Sign in again.')
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const response = await fetch(`${apiUrl}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        ...init.headers,
+      },
+    })
+    if (response.status === 401) {
+      clearSession()
+      if (session) window.dispatchEvent(new Event('darukaa:unauthorized'))
+      throw new Error(
+        session ? 'Your session expired. Sign in again.' : 'Email or password is incorrect.',
+      )
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      throw new Error(friendlyError(response.status, body?.detail))
+    }
+    return (await response.json()) as T
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('The request took too long. Check your connection and try again.')
+    }
+    if (error instanceof TypeError) {
+      throw new Error('Darukaa cannot reach the server. Check your connection and try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
   }
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null)
-    throw new Error(detail?.detail ?? `Request failed (${response.status})`)
-  }
-  return (await response.json()) as T
 }
 
 export function login(email: string, password: string) {

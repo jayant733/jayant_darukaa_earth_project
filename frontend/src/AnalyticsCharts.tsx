@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Highcharts from 'highcharts'
 import type { SeriesPoint } from './api'
 
@@ -9,16 +9,24 @@ function chartLib() {
 
 function ChartFrame({ options }: { options: Highcharts.Options }) {
   const host = useRef<HTMLDivElement>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     const node = host.current
     if (!node) return
-    const chart = chartLib().chart(node, options)
+    let chart: Highcharts.Chart
+    try {
+      chart = chartLib().chart(node, options)
+    } catch {
+      queueMicrotask(() => setFailed(true))
+      return
+    }
     return () => {
       chart.destroy()
     }
   }, [options])
 
+  if (failed) return <p className="chart-error">This chart is temporarily unavailable.</p>
   return <div ref={host} />
 }
 
@@ -27,6 +35,7 @@ function sharedOptions(categories: string[]): Highcharts.Options {
     chart: { backgroundColor: 'transparent', height: 245, spacing: [12, 4, 8, 0] },
     title: { text: undefined },
     credits: { enabled: false },
+    accessibility: { enabled: false },
     legend: { enabled: false },
     xAxis: {
       categories,

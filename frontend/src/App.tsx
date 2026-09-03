@@ -15,6 +15,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
+import { matchPath, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import { AnalyticsCharts } from './AnalyticsCharts'
 import { MapPanel } from './MapPanel'
@@ -36,8 +37,6 @@ import {
 } from './api'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
-
-type View = { kind: 'overview' } | { kind: 'project'; id: string } | { kind: 'site'; id: string }
 
 function healthLabel(score: number) {
   if (score >= 80) return 'EXCELLENT'
@@ -119,19 +118,21 @@ function Sidebar({
   close,
   userName,
   onLogout,
-  onHome,
+  activePath,
+  onNavigate,
 }: {
   open: boolean
   close: () => void
   userName: string
   onLogout: () => void
-  onHome: () => void
+  activePath: string
+  onNavigate: (path: string) => void
 }) {
   const items = [
-    [LayoutDashboard, 'Overview'],
-    [Layers3, 'Projects'],
-    [Map, 'Sites'],
-    [BarChart3, 'Analytics'],
+    [LayoutDashboard, 'Overview', '/'],
+    [Layers3, 'Projects', '/projects'],
+    [Map, 'Sites', '/sites'],
+    [BarChart3, 'Analytics', '/analytics'],
   ] as const
   return (
     <aside className={`sidebar ${open ? 'is-open' : ''}`}>
@@ -148,12 +149,14 @@ function Sidebar({
       </div>
       <nav>
         <span className="nav-label">Workspace</span>
-        {items.map(([Icon, label], index) => (
+        {items.map(([Icon, label, path]) => (
           <button
-            className={index === 0 ? 'active' : ''}
+            className={
+              activePath === path || (path !== '/' && activePath.startsWith(path)) ? 'active' : ''
+            }
             key={label}
             onClick={() => {
-              onHome()
+              onNavigate(path)
               close()
             }}
           >
@@ -162,7 +165,7 @@ function Sidebar({
         ))}
       </nav>
       <div className="sidebar-foot">
-        <button>
+        <button onClick={() => onNavigate('/settings')}>
           <Settings size={17} /> Settings
         </button>
         <div className="profile">
@@ -259,6 +262,7 @@ function ProjectView({
 }) {
   const [project, setProject] = useState<ProjectDetail>()
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -268,14 +272,26 @@ function ProjectView({
     return () => {
       active = false
     }
-  }, [id])
+  }, [attempt, id])
 
   const projectSites = useMemo(
     () => sites.filter((site) => site.properties.project_id === id),
     [id, sites],
   )
 
-  if (error) return <ErrorState message={error} onBack={back} />
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        onBack={back}
+        onRetry={() => {
+          setError('')
+          setProject(undefined)
+          setAttempt((value) => value + 1)
+        }}
+      />
+    )
+  }
   if (!project) return <LoadingState label="Loading project analytics" />
 
   const carbonShare = Math.min((project.carbon_tco2e / (project.carbon_tco2e || 1)) * 92, 100)
@@ -352,6 +368,7 @@ function ProjectView({
 function SiteView({ id, back }: { id: string; back: () => void }) {
   const [site, setSite] = useState<SiteDetail>()
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -361,9 +378,21 @@ function SiteView({ id, back }: { id: string; back: () => void }) {
     return () => {
       active = false
     }
-  }, [id])
+  }, [attempt, id])
 
-  if (error) return <ErrorState message={error} onBack={back} />
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        onBack={back}
+        onRetry={() => {
+          setError('')
+          setSite(undefined)
+          setAttempt((value) => value + 1)
+        }}
+      />
+    )
+  }
   if (!site) return <LoadingState label="Loading site analytics" />
 
   return (
@@ -421,7 +450,23 @@ function SiteView({ id, back }: { id: string; back: () => void }) {
   )
 }
 
-function LoadingState({ label }: { label: string }) {
+function LoadingState({ label, dashboard = false }: { label: string; dashboard?: boolean }) {
+  if (dashboard) {
+    return (
+      <div className="dashboard-skeleton" role="status" aria-label={label}>
+        <div className="skeleton skeleton-map" />
+        <div className="skeleton-row">
+          <div className="skeleton" />
+          <div className="skeleton" />
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </div>
+        <div className="skeleton skeleton-line" />
+        <div className="skeleton skeleton-line" />
+        <span className="sr-only">{label}</span>
+      </div>
+    )
+  }
   return (
     <div className="state-panel">
       <div className="spinner" />
@@ -430,16 +475,243 @@ function LoadingState({ label }: { label: string }) {
   )
 }
 
-function ErrorState({ message, onBack }: { message: string; onBack?: () => void }) {
+function ErrorState({
+  message,
+  onBack,
+  onRetry,
+}: {
+  message: string
+  onBack?: () => void
+  onRetry?: () => void
+}) {
   return (
     <div className="state-panel">
       <span className="eyebrow">Something went wrong</span>
       <h3>{message}</h3>
-      <p>Confirm the API is running on {import.meta.env.VITE_API_URL || 'port 18765'}.</p>
-      {onBack && (
-        <button className="secondary" onClick={onBack}>
-          Go back
+      <p>Your data is safe. Check your connection, then try again.</p>
+      <div className="state-actions">
+        {onRetry && (
+          <button className="primary" onClick={onRetry}>
+            Try again
+          </button>
+        )}
+        {onBack && (
+          <button className="secondary" onClick={onBack}>
+            Go back
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Toast({
+  message,
+  kind,
+  dismiss,
+}: {
+  message: string
+  kind: 'success' | 'error'
+  dismiss: () => void
+}) {
+  useEffect(() => {
+    const timer = window.setTimeout(dismiss, 5000)
+    return () => window.clearTimeout(timer)
+  }, [dismiss])
+  return (
+    <div className={`toast toast-${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
+      <span>{kind === 'success' ? '✓' : '!'}</span>
+      <p>{message}</p>
+      <button onClick={dismiss} aria-label="Dismiss notification">
+        <X size={15} />
+      </button>
+    </div>
+  )
+}
+
+function NotFound({ home }: { home: () => void }) {
+  return (
+    <div className="not-found">
+      <div className="not-found-orbit">
+        <Globe2 />
+        <span>404</span>
+      </div>
+      <span className="eyebrow">Outside monitored territory</span>
+      <h1>Nothing mapped here.</h1>
+      <p>The page may have moved, or the address may be incorrect.</p>
+      <button className="primary" onClick={home}>
+        Return to Earth Intelligence
+      </button>
+    </div>
+  )
+}
+
+function ProjectList({
+  projects,
+  openProject,
+}: {
+  projects: ProjectSummary[]
+  openProject: (id: string) => void
+}) {
+  return (
+    <div className="project-list">
+      {projects.map((project, index) => (
+        <button className="project-row" key={project.id} onClick={() => openProject(project.id)}>
+          <span className="project-index">{String(index + 1).padStart(2, '0')}</span>
+          <span className="project-name">
+            <strong>{project.name}</strong>
+            <small>
+              {project.country} · {project.area_ha.toLocaleString()} ha · {project.site_count} sites
+            </small>
+          </span>
+          <span className="project-carbon">
+            <small>CARBON</small>
+            {compact.format(project.carbon_tco2e)} tCO₂e
+          </span>
+          <span className="project-health">
+            <small>HEALTH</small>
+            <i>
+              <span style={{ width: `${project.health}%` }} />
+            </i>
+            {project.health}
+          </span>
+          <ArrowUpRight size={18} />
         </button>
+      ))}
+    </div>
+  )
+}
+
+function WorkspaceSection({
+  section,
+  projects,
+  sites,
+  openProject,
+  openSite,
+  create,
+}: {
+  section: 'projects' | 'sites' | 'analytics' | 'settings'
+  projects: ProjectSummary[]
+  sites: SiteFeature[]
+  openProject: (id: string) => void
+  openSite: (site: SiteFeature) => void
+  create: () => void
+}) {
+  if (section === 'settings') {
+    return (
+      <div className="overview">
+        <div className="page-intro">
+          <div>
+            <span className="eyebrow">Workspace</span>
+            <h1>Settings.</h1>
+            <p>Account and data connection status for this administrator workspace.</p>
+          </div>
+        </div>
+        <div className="settings-card">
+          <strong>Data connection</strong>
+          <span className="status-good">Connected</span>
+          <p>Projects, site geometry, and analytics are stored in PostgreSQL with PostGIS.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (section === 'sites') {
+    return (
+      <div className="overview">
+        <div className="page-intro">
+          <div>
+            <span className="eyebrow">Geospatial portfolio</span>
+            <h1>Sites.</h1>
+            <p>Explore every monitored boundary and open its latest observations.</p>
+          </div>
+        </div>
+        {sites.length ? (
+          <>
+            <section className="overview-map">
+              <MapPanel sites={sites} onSelect={openSite} />
+            </section>
+            <div className="site-directory">
+              {sites.map((site) => (
+                <button key={site.id} onClick={() => openSite(site)}>
+                  <span className="eyebrow">{site.properties.project}</span>
+                  <strong>{site.properties.name}</strong>
+                  <small>{site.properties.area_ha.toLocaleString()} ha</small>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="state-panel">
+            <Map size={26} />
+            <h3>No sites have been mapped</h3>
+            <p>Create a project and draw its first geographical boundary.</p>
+            <button className="primary" onClick={create}>
+              <Plus size={16} /> New project
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (section === 'analytics') {
+    return (
+      <div className="overview">
+        <div className="page-intro">
+          <div>
+            <span className="eyebrow">Portfolio performance</span>
+            <h1>Analytics.</h1>
+            <p>Compare health, carbon delivery, and biodiversity across projects.</p>
+          </div>
+        </div>
+        {projects.length ? (
+          <div className="analytics-directory">
+            {projects.map((project) => (
+              <button key={project.id} onClick={() => openProject(project.id)}>
+                <span>{project.name}</span>
+                <strong>{project.health}</strong>
+                <i>
+                  <span style={{ width: `${project.health}%` }} />
+                </i>
+                <small>{healthLabel(project.health)}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="state-panel">
+            <BarChart3 size={26} />
+            <h3>No analytics available</h3>
+            <p>Analytics appear after a project records its first site observation.</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="overview">
+      <div className="page-intro">
+        <div>
+          <span className="eyebrow">Project portfolio</span>
+          <h1>Projects.</h1>
+          <p>Open a landscape to review its sites and performance.</p>
+        </div>
+        <button className="primary" onClick={create}>
+          <Plus size={16} /> New project
+        </button>
+      </div>
+      {projects.length ? (
+        <ProjectList projects={projects} openProject={openProject} />
+      ) : (
+        <div className="state-panel">
+          <Layers3 size={26} />
+          <h3>No projects yet</h3>
+          <p>Define your first landscape and map its first geographical site.</p>
+          <button className="primary" onClick={create}>
+            <Plus size={16} /> New project
+          </button>
+        </div>
       )}
     </div>
   )
@@ -469,7 +741,13 @@ function countryCenter(country: string): [number, number] {
   return COUNTRY_CENTERS[country.trim().toLowerCase()] ?? [12.35, 6.42]
 }
 
-function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () => void }) {
+function CreateWizard({
+  close,
+  onCreated,
+}: {
+  close: () => void
+  onCreated: (projectId: string, projectName: string) => void
+}) {
   const [step, setStep] = useState(1)
   const [draft, setDraft] = useState(emptyDraft)
   const [error, setError] = useState('')
@@ -498,7 +776,7 @@ function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () =
     try {
       const ring = toCoordinates(draft.points)
       ring.push(ring[0])
-      await createProject({
+      const result = await createProject({
         name: draft.name,
         country: draft.country,
         description: draft.description,
@@ -510,7 +788,7 @@ function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () =
         ],
       })
       setStep(4)
-      onCreated()
+      onCreated(result.id, draft.name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create project')
     } finally {
@@ -572,6 +850,9 @@ function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () =
                   />
                 </label>
               </div>
+              {!canContinue && (
+                <p className="form-hint">Project name and country are required to continue.</p>
+              )}
             </>
           )}
           {step === 2 && (
@@ -611,6 +892,9 @@ function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () =
                 >
                   Clear polygon
                 </button>
+              )}
+              {draft.points.length > 0 && draft.points.length < 3 && (
+                <p className="form-hint">Add at least three points to close the boundary.</p>
               )}
             </div>
           )}
@@ -666,8 +950,9 @@ function CreateWizard({ close, onCreated }: { close: () => void; onCreated: () =
 }
 
 function App() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [userName, setUserName] = useState(() => readSession()?.user.name ?? '')
-  const [view, setView] = useState<View>({ kind: 'overview' })
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [sites, setSites] = useState<SiteFeature[]>([])
   const [loading, setLoading] = useState(true)
@@ -675,9 +960,22 @@ function App() {
   const [wizard, setWizard] = useState(false)
   const [menu, setMenu] = useState(false)
   const [query, setQuery] = useState('')
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' }>()
 
   const [refreshKey, setRefreshKey] = useState(0)
-  const reload = useCallback(() => setRefreshKey((key) => key + 1), [])
+  const reload = useCallback(() => {
+    setLoading(true)
+    setRefreshKey((key) => key + 1)
+  }, [])
+
+  useEffect(() => {
+    const expire = () => {
+      setUserName('')
+      setToast({ kind: 'error', message: 'Your session expired. Please sign in again.' })
+    }
+    window.addEventListener('darukaa:unauthorized', expire)
+    return () => window.removeEventListener('darukaa:unauthorized', expire)
+  }, [])
 
   useEffect(() => {
     if (!userName) return
@@ -717,13 +1015,30 @@ function App() {
     [projects, query],
   )
 
+  const openProject = useCallback((id: string) => navigate(`/projects/${id}`), [navigate])
   const openSite = useCallback(
-    (site: SiteFeature) => setView({ kind: 'site', id: site.properties.id }),
-    [],
+    (site: SiteFeature) => navigate(`/sites/${site.properties.id}`),
+    [navigate],
   )
+  const projectMatch = matchPath('/projects/:id', location.pathname)
+  const siteMatch = matchPath('/sites/:id', location.pathname)
+  const section = ['/projects', '/sites', '/analytics', '/settings'].includes(location.pathname)
+    ? (location.pathname.slice(1) as 'projects' | 'sites' | 'analytics' | 'settings')
+    : undefined
+  const routeFound = location.pathname === '/' || Boolean(projectMatch || siteMatch || section)
 
   if (!userName) {
-    return <LoginScreen onAuthenticated={setUserName} />
+    return (
+      <>
+        <LoginScreen
+          onAuthenticated={(name) => {
+            setUserName(name)
+            setToast({ kind: 'success', message: `Welcome back, ${name}.` })
+          }}
+        />
+        {toast && <Toast {...toast} dismiss={() => setToast(undefined)} />}
+      </>
+    )
   }
 
   return (
@@ -732,10 +1047,12 @@ function App() {
         open={menu}
         close={() => setMenu(false)}
         userName={userName}
-        onHome={() => setView({ kind: 'overview' })}
+        activePath={location.pathname}
+        onNavigate={navigate}
         onLogout={() => {
           clearSession()
           setUserName('')
+          navigate('/')
         }}
       />
       <main>
@@ -756,18 +1073,44 @@ function App() {
           </button>
         </header>
 
-        {view.kind === 'project' && (
+        {!routeFound && <NotFound home={() => navigate('/')} />}
+        {routeFound && error && (
+          <div className="overview">
+            <ErrorState message={error} onRetry={reload} />
+          </div>
+        )}
+        {routeFound && !error && loading && (
+          <div className="overview">
+            <LoadingState label="Loading workspace" dashboard />
+          </div>
+        )}
+        {routeFound && !error && !loading && projectMatch?.params.id && (
           <ProjectView
-            id={view.id}
+            key={projectMatch.params.id}
+            id={projectMatch.params.id}
             sites={sites}
-            back={() => setView({ kind: 'overview' })}
-            onSite={(id) => setView({ kind: 'site', id })}
+            back={() => navigate('/projects')}
+            onSite={(id) => navigate(`/sites/${id}`)}
           />
         )}
-        {view.kind === 'site' && (
-          <SiteView id={view.id} back={() => setView({ kind: 'overview' })} />
+        {routeFound && !error && !loading && siteMatch?.params.id && (
+          <SiteView
+            key={siteMatch.params.id}
+            id={siteMatch.params.id}
+            back={() => navigate('/sites')}
+          />
         )}
-        {view.kind === 'overview' && (
+        {routeFound && !error && !loading && section && (
+          <WorkspaceSection
+            section={section}
+            projects={projects}
+            sites={sites}
+            openProject={openProject}
+            openSite={openSite}
+            create={() => setWizard(true)}
+          />
+        )}
+        {routeFound && !error && !loading && location.pathname === '/' && (
           <div className="overview">
             <div className="page-intro">
               <div>
@@ -776,97 +1119,70 @@ function App() {
                 <p>Monitor carbon and biodiversity performance across every landscape.</p>
               </div>
             </div>
-
-            {error && <ErrorState message={error} />}
-            {!error && loading && <LoadingState label="Loading portfolio" />}
-
-            {!error && !loading && (
-              <>
-                <section className="overview-map">
-                  <MapPanel sites={sites} onSelect={openSite} />
-                  <div className="map-overlay">
-                    <span className="eyebrow">Live portfolio</span>
-                    <strong>{sites.length} monitored sites</strong>
-                    <div>
-                      <i className="active-dot" /> Connected to PostGIS
-                    </div>
-                  </div>
-                </section>
-                <section className="portfolio-stats">
-                  <div className="stats-intro">
-                    <span className="eyebrow">Portfolio overview</span>
-                    <p>Verified environmental performance across all active regions.</p>
-                  </div>
-                  <Metric label="Active projects" value={`${projects.length}`} />
-                  <Metric label="Protected area" value={compact.format(totals.area)} suffix=" ha" />
-                  <Metric
-                    label="Carbon impact"
-                    value={compact.format(totals.carbon)}
-                    suffix=" tCO₂e"
-                  />
-                  <Metric
-                    label="Biodiversity index"
-                    value={`${totals.biodiversity}`}
-                    suffix="/100"
-                  />
-                </section>
-                <section className="projects-section">
-                  <div className="section-heading">
-                    <div>
-                      <span className="eyebrow">Project portfolio</span>
-                      <h2>All landscapes</h2>
-                    </div>
-                  </div>
-                  {visible.length === 0 ? (
-                    <div className="state-panel">
-                      <span className="eyebrow">No projects yet</span>
-                      <h3>Create your first landscape</h3>
-                      <p>Draw a polygon to start monitoring carbon and biodiversity.</p>
-                      <button className="primary" onClick={() => setWizard(true)}>
-                        <Plus size={16} /> New project
-                      </button>
-                    </div>
+            <section className="overview-map">
+              <MapPanel sites={sites} onSelect={openSite} />
+              <div className="map-overlay">
+                <span className="eyebrow">Live portfolio</span>
+                <strong>{sites.length} monitored sites</strong>
+                <div>
+                  <i className="active-dot" /> Connected to PostGIS
+                </div>
+              </div>
+            </section>
+            <section className="portfolio-stats">
+              <div className="stats-intro">
+                <span className="eyebrow">Portfolio overview</span>
+                <p>Verified environmental performance across all active regions.</p>
+              </div>
+              <Metric label="Active projects" value={`${projects.length}`} />
+              <Metric label="Protected area" value={compact.format(totals.area)} suffix=" ha" />
+              <Metric label="Carbon impact" value={compact.format(totals.carbon)} suffix=" tCO₂e" />
+              <Metric label="Biodiversity index" value={`${totals.biodiversity}`} suffix="/100" />
+            </section>
+            <section className="projects-section">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Project portfolio</span>
+                  <h2>All landscapes</h2>
+                </div>
+              </div>
+              {visible.length === 0 ? (
+                <div className="state-panel">
+                  <Search size={26} />
+                  <h3>{projects.length ? 'No matching projects' : 'No projects yet'}</h3>
+                  <p>
+                    {projects.length
+                      ? `No projects match “${query}”. Try a different name or region.`
+                      : 'Draw a polygon to start monitoring carbon and biodiversity.'}
+                  </p>
+                  {projects.length ? (
+                    <button className="secondary" onClick={() => setQuery('')}>
+                      Clear search
+                    </button>
                   ) : (
-                    <div className="project-list">
-                      {visible.map((project, index) => (
-                        <button
-                          className="project-row"
-                          key={project.id}
-                          onClick={() => setView({ kind: 'project', id: project.id })}
-                        >
-                          <span className="project-index">
-                            {String(index + 1).padStart(2, '0')}
-                          </span>
-                          <span className="project-name">
-                            <strong>{project.name}</strong>
-                            <small>
-                              {project.country} · {project.area_ha.toLocaleString()} ha ·{' '}
-                              {project.site_count} sites
-                            </small>
-                          </span>
-                          <span className="project-carbon">
-                            <small>CARBON</small>
-                            {compact.format(project.carbon_tco2e)} tCO₂e
-                          </span>
-                          <span className="project-health">
-                            <small>HEALTH</small>
-                            <i>
-                              <span style={{ width: `${project.health}%` }} />
-                            </i>
-                            {project.health}
-                          </span>
-                          <ArrowUpRight size={18} />
-                        </button>
-                      ))}
-                    </div>
+                    <button className="primary" onClick={() => setWizard(true)}>
+                      <Plus size={16} /> New project
+                    </button>
                   )}
-                </section>
-              </>
-            )}
+                </div>
+              ) : (
+                <ProjectList projects={visible} openProject={openProject} />
+              )}
+            </section>
           </div>
         )}
       </main>
-      {wizard && <CreateWizard close={() => setWizard(false)} onCreated={reload} />}
+      {wizard && (
+        <CreateWizard
+          close={() => setWizard(false)}
+          onCreated={(projectId, projectName) => {
+            reload()
+            setToast({ kind: 'success', message: `${projectName} was created successfully.` })
+            navigate(`/projects/${projectId}`)
+          }}
+        />
+      )}
+      {toast && <Toast {...toast} dismiss={() => setToast(undefined)} />}
     </div>
   )
 }
