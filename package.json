@@ -3,21 +3,44 @@
   "version": "1.0.0",
   "description": "Geospatial carbon and biodiversity intelligence platform",
   "private": true,
+  "packageManager": "npm@10.9.0",
+  "engines": {
+    "node": ">=22 <26",
+    "npm": ">=10"
+  },
   "scripts": {
-    "lint": "npm --prefix frontend run lint",
-    "format": "prettier --write \"frontend/**/*.{ts,tsx,css,json}\" && backend/.venv/bin/ruff format backend",
-    "test": "npm --prefix frontend run build",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "lint:backend": "python -m ruff check backend",
+    "format": "npm run format:frontend && npm run format:backend",
+    "format:check": "npm --prefix frontend run format:check && python -m ruff format --check backend",
+    "format:frontend": "npm --prefix frontend run format",
+    "format:backend": "python -m ruff format backend",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "npm --prefix frontend test",
+    "test:backend": "python -m pytest backend",
+    "build": "npm --prefix frontend run build",
     "prepare": "husky"
   },
   "repository": {
     "type": "git",
     "url": "https://origin.cursor.com/git/wisp-qa/tmp-f3e548d49ed7629f.git"
   },
-  "keywords": ["climate-tech", "postgis", "mapbox"],
+  "keywords": [
+    "climate-tech",
+    "postgis",
+    "mapbox"
+  ],
   "license": "MIT",
   "lint-staged": {
-    "frontend/**/*.{ts,tsx,css,json,md}": "prettier --write",
-    "backend/**/*.py": "sh scripts/lint-python.sh"
+    "frontend/**/*.{ts,tsx,js,jsx,css,json,md}": [
+      "prettier --write",
+      "npm --prefix frontend exec -- oxlint --fix"
+    ],
+    "backend/**/*.py": [
+      "python -m ruff check --fix",
+      "python -m ruff format"
+    ]
   },
   "devDependencies": {
     "husky": "^9.1.7",

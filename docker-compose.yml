@@ -6,15 +6,15 @@ services:
       POSTGRES_USER: darukaa
       POSTGRES_PASSWORD: darukaa
     ports:
-      - "15432:5432"
+      - '15432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/01-create-test-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U darukaa"]
+      test: ['CMD-SHELL', 'pg_isready -U darukaa']
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
   postgres_data:
-

@@ -22,7 +22,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run format:check
       - run: npm run lint
+      - run: npm test
       - run: npm run build
 
   backend:
@@ -45,12 +47,14 @@ jobs:
       DATABASE_URL: postgresql+psycopg://darukaa:darukaa@localhost:5432/darukaa_test
       TEST_DATABASE_URL: postgresql+psycopg://darukaa:darukaa@localhost:5432/darukaa_test
       JWT_SECRET: ci-only-secret-at-least-thirty-two-characters
+      ENVIRONMENT: development
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - run: pip install -e "./backend[dev]"
       - run: ruff format --check backend
       - run: ruff check backend
@@ -58,24 +62,34 @@ jobs:
         working-directory: backend
       - run: pytest
         working-directory: backend
+      - run: docker build --tag darukaa-api:ci backend
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [frontend, backend]
     runs-on: ubuntu-latest
+    env:
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      POSTDEPLOY_API_URL: ${{ secrets.POSTDEPLOY_API_URL }}
+      POSTDEPLOY_FRONTEND_URL: ${{ secrets.POSTDEPLOY_FRONTEND_URL }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Trigger Render API deployment
         if: env.RENDER_DEPLOY_HOOK != ''
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: curl --fail --request POST "$RENDER_DEPLOY_HOOK"
       - name: Deploy frontend to Vercel
         if: env.VERCEL_TOKEN != ''
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: npx vercel@latest deploy --prod --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@48.11.0 deploy --prod --token="$VERCEL_TOKEN"
         working-directory: frontend
-
+      - name: Smoke test deployed API
+        if: env.POSTDEPLOY_API_URL != ''
+        run: curl --fail --show-error --silent --retry 12 --retry-delay 10 --retry-all-errors --max-time 15 "${POSTDEPLOY_API_URL%/}/health"
+      - name: Smoke test deployed frontend
+        if: env.POSTDEPLOY_FRONTEND_URL != ''
+        run: curl --fail --show-error --silent --retry 12 --retry-delay 10 --retry-all-errors --max-time 15 "${POSTDEPLOY_FRONTEND_URL%/}/"
