@@ -5,7 +5,7 @@ from geoalchemy2.shape import from_shape
 from shapely.geometry import Polygon
 from sqlalchemy import select
 
-from app.db import SessionLocal, initialize_database
+from app.db import SessionLocal
 from app.models import MetricObservation, Project, ProjectStatus, Site, User
 from app.security import hash_password
 
@@ -32,13 +32,12 @@ def square(lat: float, lng: float, size: float = 0.65) -> Polygon:
 
 
 def seed() -> None:
-    initialize_database()
     with SessionLocal() as db:
         if db.scalar(select(User).limit(1)):
             print("Database already contains data; seed skipped.")
             return
         admin = User(
-            name="Maya Chen",
+            name="Jayant Sharma",
             email="admin@darukaa.earth",
             password_hash=hash_password("darukaa-demo"),
         )

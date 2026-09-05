@@ -30,7 +30,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     name: Mapped[str] = mapped_column(String(180), index=True)
     country: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -41,7 +41,7 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     creator: Mapped[User] = relationship(back_populates="projects")
     sites: Mapped[list["Site"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan", passive_deletes=True
     )
 
 
@@ -49,7 +49,9 @@ class Site(Base):
     __tablename__ = "sites"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(180))
     geom: Mapped[object] = mapped_column(Geometry("POLYGON", srid=4326, spatial_index=True))
     area_ha: Mapped[float] = mapped_column(Float)
@@ -57,6 +59,7 @@ class Site(Base):
     observations: Mapped[list["MetricObservation"]] = relationship(
         back_populates="site",
         cascade="all, delete-orphan",
+        passive_deletes=True,
         order_by="MetricObservation.observed_on",
     )
 
@@ -66,7 +69,9 @@ class MetricObservation(Base):
     __table_args__ = (UniqueConstraint("site_id", "observed_on"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    site_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sites.id"), index=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sites.id", ondelete="CASCADE"), index=True
+    )
     observed_on: Mapped[date] = mapped_column(Date)
     carbon_tco2e: Mapped[float] = mapped_column(Float)
     biodiversity_index: Mapped[float] = mapped_column(Float)
