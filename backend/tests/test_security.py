@@ -1,5 +1,6 @@
 import uuid
 
+from app.config import normalize_database_url
 from app.security import create_token, hash_password, verify_password
 
 
@@ -15,3 +16,11 @@ def test_token_contains_user_identity():
     token = create_token(user_id)
     assert token
     assert isinstance(token, str)
+
+
+def test_neon_database_url_uses_psycopg_and_ssl():
+    url = normalize_database_url(
+        "postgres://neondb_owner:secret@ep-demo.ap-southeast-1.aws.neon.tech/neondb"
+    )
+    assert url.startswith("postgresql+psycopg://")
+    assert "sslmode=require" in url

@@ -147,7 +147,7 @@ python -m pytest backend
    - Vercel CLI deploys `frontend/`.
    - Optional `POSTDEPLOY_API_URL` / `POSTDEPLOY_FRONTEND_URL` smoke-check `/health` and `/`.
 
-The Render Blueprint only defines the API web service (`plan: free`). Provision Postgres with PostGIS yourself, then set `DATABASE_URL` (use `postgresql+psycopg://...`) and `CORS_ORIGINS` in the Render dashboard. `ENVIRONMENT=production` is already in `render.yaml`. Seed production separately if you want demo rows.
+The Render Blueprint only defines the API web service (`plan: free`). Provision Postgres with PostGIS yourself (Neon works), then set `DATABASE_URL` and `CORS_ORIGINS` in the Render dashboard. Paste the URI from Neon’s dashboard; the API rewrites `postgres://` to `postgresql+psycopg://` and adds `sslmode=require`. If the password contains `@`, `#`, or `%`, URL-encode it. Neon needs the PostGIS extension enabled. `ENVIRONMENT=production` is already in `render.yaml`. Seed production separately if you want demo rows.
 
 ### Required GitHub secrets
 
