@@ -14,6 +14,7 @@ export type ProjectSummary = {
 }
 
 export type SeriesPoint = {
+  id?: string
   date: string
   carbon: number
   biodiversity: number
@@ -33,6 +34,7 @@ export type SiteFeature = {
     project: string
     status: string
     area_ha: number
+    health?: number
   }
 }
 
@@ -48,10 +50,38 @@ export type SiteDetail = {
   carbon_tco2e: number
   biodiversity_index: number
   progress: number
+  health: number
   series: SeriesPoint[]
 }
 
 export type Session = { access_token: string; user: { id?: string; name: string; email: string } }
+
+export type PolygonGeometry = { type: 'Polygon'; coordinates: [number, number][][] }
+export type ProjectStatus = 'planning' | 'active' | 'completed'
+export type HealthStatus = {
+  status: string
+  service?: string
+  database?: string
+  checked_at?: string
+}
+export type Observation = {
+  id: string
+  site_id: string
+  observed_on: string
+  carbon_tco2e: number
+  biodiversity_index: number
+  restoration_progress: number
+}
+export type ObservationInput = Omit<Observation, 'id' | 'site_id'>
+export type PortfolioAnalytics = {
+  projects: ProjectSummary[]
+  totals?: {
+    area_ha: number
+    carbon_tco2e: number
+    biodiversity_index: number
+    restoration_progress: number
+  }
+}
 
 const SESSION_KEY = 'darukaa.session'
 
@@ -96,12 +126,12 @@ function friendlyError(status: number, detail?: unknown) {
   return 'We could not complete that request. Please try again.'
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, baseUrl = apiUrl): Promise<T> {
   const session = readSession()
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
-    const response = await fetch(`${apiUrl}${path}`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {
@@ -121,6 +151,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       const body = await response.json().catch(() => null)
       throw new Error(friendlyError(response.status, body?.detail))
     }
+    if (response.status === 204) return undefined as T
     return (await response.json()) as T
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -154,12 +185,23 @@ export const getProjects = () => request<ProjectSummary[]>('/projects')
 export const getProject = (id: string) => request<ProjectDetail>(`/projects/${id}`)
 export const getSites = () => request<SiteCollection>('/sites')
 export const getSite = (id: string) => request<SiteDetail>(`/sites/${id}`)
+export async function getHealth(): Promise<HealthStatus> {
+  const origin = apiUrl.replace(/\/api\/?$/, '')
+  const [health, ready] = await Promise.all([
+    request<HealthStatus>('/health', {}, origin),
+    request<HealthStatus>('/ready', {}, origin),
+  ])
+  return { ...health, ...ready }
+}
+
+export const getPortfolioAnalytics = () => request<PortfolioAnalytics>('/analytics/portfolio')
 
 export type NewProject = {
   name: string
   country: string
   description: string
-  sites: { name: string; geometry: { type: 'Polygon'; coordinates: number[][][] } }[]
+  carbon_target?: number
+  sites: { name: string; geometry: PolygonGeometry }[]
 }
 
 export function createProject(payload: NewProject) {
@@ -167,4 +209,62 @@ export function createProject(payload: NewProject) {
     method: 'POST',
     body: JSON.stringify({ ...payload, status: 'planning' }),
   })
+}
+
+export function updateProject(
+  id: string,
+  payload: Partial<Pick<NewProject, 'name' | 'country' | 'description' | 'carbon_target'>> & {
+    status?: ProjectStatus
+  },
+) {
+  return request<ProjectDetail>(`/projects/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteProject(id: string) {
+  return request<void>(`/projects/${id}`, { method: 'DELETE' })
+}
+
+export function createSite(
+  projectId: string,
+  payload: { name: string; geometry: PolygonGeometry },
+) {
+  return request<{ id: string; message: string }>(`/projects/${projectId}/sites`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateSite(
+  id: string,
+  payload: Partial<{ name: string; project_id: string; geometry: PolygonGeometry }>,
+) {
+  return request<SiteDetail>(`/sites/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteSite(id: string) {
+  return request<void>(`/sites/${id}`, { method: 'DELETE' })
+}
+
+export function createObservation(siteId: string, payload: ObservationInput) {
+  return request<Observation>(`/sites/${siteId}/observations`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateObservation(id: string, payload: Partial<ObservationInput>) {
+  return request<Observation>(`/observations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteObservation(id: string) {
+  return request<void>(`/observations/${id}`, { method: 'DELETE' })
 }

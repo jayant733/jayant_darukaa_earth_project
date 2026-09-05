@@ -88,6 +88,13 @@ textarea {
 button {
   cursor: pointer;
 }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.danger {
+  color: #8b3a32 !important;
+}
 .app-shell {
   display: grid;
   grid-template-columns: 238px 1fr;
@@ -682,6 +689,32 @@ h1 {
   display: grid;
   place-items: center;
 }
+.observation-history {
+  margin-top: 28px;
+}
+.observation-table {
+  border-top: 1px solid var(--ink);
+}
+.observation-row {
+  display: grid;
+  grid-template-columns: 1.1fr repeat(3, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 54px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+}
+.observation-row > span {
+  color: var(--muted);
+}
+.observation-row > div {
+  display: flex;
+  gap: 12px;
+}
+.observation-row .danger {
+  color: #8b3a32;
+}
 .form-hint {
   color: var(--muted);
   font-size: 10px;
@@ -1121,8 +1154,28 @@ h1 {
 }
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+}
+.analytics-series {
+  margin-top: 20px;
+}
+.analytics-range {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.analytics-range .eyebrow {
+  margin: 0;
+}
+.analytics-range select {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 10px;
+  font-size: 10px;
 }
 .chart-unit {
   color: var(--muted);
@@ -1214,7 +1267,8 @@ h1 {
   grid-column: 1/-1;
 }
 .form-grid input,
-.form-grid textarea {
+.form-grid textarea,
+.field-label input {
   display: block;
   width: 100%;
   border: 0;
@@ -1281,6 +1335,228 @@ h1 {
   border-top: 1px solid var(--line);
 }
 
+.detail-actions,
+.polygon-toolbar,
+.analytics-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-actions {
+  justify-content: flex-end;
+}
+.edit-panel {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 24px;
+  margin: 0 0 22px;
+}
+.edit-panel > .primary {
+  margin-top: 20px;
+}
+.field-label {
+  display: block;
+  max-width: 520px;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.observation-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+.analytics-filters {
+  align-items: end;
+  padding: 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  gap: 14px;
+}
+.analytics-filters label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.analytics-filters > span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.analytics-filters select,
+.form-grid select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  padding: 0 34px 0 10px;
+}
+.analytics-directory b {
+  font:
+    400 30px Georgia,
+    serif;
+  text-align: right;
+}
+.analytics-directory button > span strong,
+.analytics-directory button > span small,
+.analytics-directory button > b small {
+  display: block;
+}
+.analytics-directory button > span strong {
+  font:
+    600 12px Inter,
+    sans-serif;
+}
+.analytics-directory button > span small,
+.analytics-directory button > b small {
+  margin-top: 5px;
+  color: var(--muted);
+  font:
+    400 8px Inter,
+    sans-serif;
+}
+.analytics-bars {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+}
+.analytics-bars i {
+  height: 4px;
+  background: #dfe2da;
+}
+.analytics-bars i span {
+  display: block;
+  height: 100%;
+  background: var(--sage);
+}
+.analytics-bars i:nth-child(2) span {
+  background: var(--forest);
+}
+.analytics-bars i:nth-child(3) span {
+  background: #7b9e4c;
+}
+.status-neutral,
+.status-bad {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.status-bad {
+  color: #8b3a32;
+}
+.draft-sites {
+  display: grid;
+  gap: 22px;
+}
+.draft-site {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.draft-site-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.draft-site-title .text-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: auto;
+  margin: 0;
+}
+.polygon-editor {
+  margin-top: 12px;
+}
+.polygon-toolbar {
+  margin-bottom: 8px;
+}
+.polygon-map {
+  height: 310px;
+  position: relative;
+  overflow: hidden;
+  background: #20382e;
+}
+.map-editor-error,
+.map-unavailable {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  text-align: center;
+  color: #dce5df;
+  padding: 28px;
+}
+.map-editor-error {
+  position: absolute;
+  inset: 0;
+}
+.map-editor-error span,
+.map-unavailable span {
+  color: #a5b4ab;
+  font-size: 10px;
+  max-width: 360px;
+  line-height: 1.5;
+}
+.coordinate-fallback {
+  border: 1px solid var(--line);
+  border-top: 0;
+  background: #f7f7f1;
+  padding: 13px 15px;
+}
+.coordinate-fallback summary {
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+.coordinate-fallback label {
+  display: block;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.coordinate-fallback textarea {
+  display: block;
+  width: 100%;
+  min-height: 145px;
+  margin-top: 7px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  padding: 10px;
+  resize: vertical;
+  font:
+    11px/1.5 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  text-transform: none;
+}
+.coordinate-fallback > p {
+  color: var(--muted);
+  font-size: 9px;
+}
+.wizard .draw-step .section-heading {
+  align-items: start;
+}
+.wizard .draw-step .section-heading h3 {
+  margin-bottom: 8px;
+}
+.wizard .draw-step .section-heading p {
+  margin-bottom: 0;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;
@@ -1314,6 +1590,9 @@ h1 {
   .charts-grid {
     grid-template-columns: 1fr;
   }
+  .observation-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
   .site-directory {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1343,6 +1622,23 @@ h1 {
   .page-intro,
   .detail-title {
     display: block;
+  }
+  .detail-actions {
+    justify-content: flex-start;
+    margin-top: 18px;
+  }
+  .detail-actions .primary,
+  .detail-actions .secondary {
+    flex: 1 1 auto;
+  }
+  .analytics-filters {
+    align-items: stretch;
+  }
+  .analytics-filters label {
+    flex: 1 1 100%;
+  }
+  .analytics-filters > span {
+    margin-left: 0;
   }
   .filter,
   .status-badge {
@@ -1389,6 +1685,12 @@ h1 {
   .analytics-directory,
   .skeleton-row {
     grid-template-columns: 1fr;
+  }
+  .observation-row {
+    grid-template-columns: 1fr auto;
+  }
+  .observation-row > span {
+    grid-column: 1 / -1;
   }
   .toast {
     right: 16px;

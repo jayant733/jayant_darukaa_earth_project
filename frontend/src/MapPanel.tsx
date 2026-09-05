@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Map as MapIcon } from 'lucide-react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
@@ -19,29 +19,20 @@ function centroid(geometry: SiteFeature['geometry']): [number, number] {
   return [total.lng / ring.length, total.lat / ring.length]
 }
 
-function projectRing(ring: [number, number][]) {
-  const lngs = ring.map(([lng]) => lng)
-  const lats = ring.map(([, lat]) => lat)
-  const minLng = Math.min(...lngs)
-  const maxLng = Math.max(...lngs)
-  const minLat = Math.min(...lats)
-  const maxLat = Math.max(...lats)
-  return ring
-    .map(([lng, lat]) => {
-      const x = ((lng - minLng) / (maxLng - minLng || 1)) * 100
-      const y = (1 - (lat - minLat) / (maxLat - minLat || 1)) * 100
-      return `${x},${y}`
-    })
-    .join(' ')
-}
-
 export function MapPanel({ sites, focused, onSelect }: Props) {
   const container = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<mapboxgl.Map | null>(null)
+  const markersRef = useRef<mapboxgl.Marker[]>([])
+  const sitesRef = useRef(sites)
+  const selectRef = useRef(onSelect)
   const configuredToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
   const token = configuredToken?.startsWith('pk.') ? configuredToken : undefined
   const [mapFailed, setMapFailed] = useState(false)
   const [mapReady, setMapReady] = useState(false)
-  const center = useMemo<[number, number]>(() => (focused ? centroid(focused) : [18, 8]), [focused])
+  useEffect(() => {
+    sitesRef.current = sites
+    selectRef.current = onSelect
+  }, [onSelect, sites])
 
   useEffect(() => {
     if (!container.current || !token || mapFailed) return
@@ -51,8 +42,8 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
       map = new mapboxgl.Map({
         container: container.current,
         style: 'mapbox://styles/mapbox/satellite-streets-v12',
-        center,
-        zoom: focused ? 6.4 : 1.35,
+        center: [18, 8],
+        zoom: 1.35,
         projection: 'mercator',
         attributionControl: false,
       })
@@ -65,10 +56,11 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right')
     map.addControl(new mapboxgl.AttributionControl({ compact: true }))
     map.on('load', () => {
+      mapRef.current = map
       setMapReady(true)
       map.addSource('sites', {
         type: 'geojson',
-        data: { type: 'FeatureCollection', features: sites },
+        data: { type: 'FeatureCollection', features: sitesRef.current },
       })
       map.addLayer({
         id: 'site-fill',
@@ -82,12 +74,13 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
         source: 'sites',
         paint: { 'line-color': '#d5ff95', 'line-width': 1.6 },
       })
-      if (!onSelect) return
       map.on('click', 'site-fill', (event) => {
         const feature = event.features?.[0] as unknown as
           { properties?: { id?: string } } | undefined
-        const match = sites.find((site) => site.properties.id === feature?.properties?.id)
-        if (match) onSelect(match)
+        const match = sitesRef.current.find(
+          (site) => site.properties.id === feature?.properties?.id,
+        )
+        if (match) selectRef.current?.(match)
       })
       map.on('mouseenter', 'site-fill', () => {
         map.getCanvas().style.cursor = 'pointer'
@@ -95,28 +88,54 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
       map.on('mouseleave', 'site-fill', () => {
         map.getCanvas().style.cursor = ''
       })
-      sites.forEach((site) => {
-        const el = document.createElement('button')
-        el.className = 'map-marker'
-        el.setAttribute('aria-label', `Open ${site.properties.name}`)
-        el.onclick = () => onSelect(site)
-        const popup = document.createElement('div')
-        const title = document.createElement('strong')
-        const details = document.createElement('span')
-        title.textContent = site.properties.project
-        details.textContent = `${site.properties.name} · ${site.properties.area_ha.toLocaleString()} ha`
-        popup.append(title, details)
-        new mapboxgl.Marker({ element: el })
-          .setLngLat(centroid(site.geometry))
-          .setPopup(new mapboxgl.Popup({ offset: 20, closeButton: false }).setDOMContent(popup))
-          .addTo(map)
-      })
     })
     return () => {
       map.off('error', failGracefully)
+      markersRef.current.forEach((marker) => marker.remove())
+      markersRef.current = []
       map.remove()
+      mapRef.current = null
     }
-  }, [center, focused, mapFailed, onSelect, sites, token])
+  }, [mapFailed, token])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    const source = map.getSource('sites') as mapboxgl.GeoJSONSource | undefined
+    source?.setData({ type: 'FeatureCollection', features: sites })
+    markersRef.current.forEach((marker) => marker.remove())
+    markersRef.current = sites.map((site) => {
+      const el = document.createElement('button')
+      el.className = 'map-marker'
+      el.type = 'button'
+      el.setAttribute('aria-label', `Open ${site.properties.name}`)
+      el.onclick = () => selectRef.current?.(site)
+      const popup = document.createElement('div')
+      const title = document.createElement('strong')
+      const details = document.createElement('span')
+      title.textContent = site.properties.project
+      details.textContent = `${site.properties.name} · ${site.properties.area_ha.toLocaleString()} ha`
+      popup.append(title, details)
+      return new mapboxgl.Marker({ element: el })
+        .setLngLat(centroid(site.geometry))
+        .setPopup(new mapboxgl.Popup({ offset: 20, closeButton: false }).setDOMContent(popup))
+        .addTo(map)
+    })
+  }, [mapReady, sites])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    if (focused) {
+      const bounds = new mapboxgl.LngLatBounds()
+      focused.coordinates[0].forEach((point) => bounds.extend(point))
+      map.fitBounds(bounds, { padding: 56, maxZoom: 14 })
+    } else if (sites.length) {
+      const bounds = new mapboxgl.LngLatBounds()
+      sites.forEach((site) => site.geometry.coordinates[0].forEach((point) => bounds.extend(point)))
+      map.fitBounds(bounds, { padding: 56, maxZoom: 8 })
+    }
+  }, [focused, mapReady, sites])
 
   if (token && !mapFailed) {
     return (
@@ -132,60 +151,17 @@ export function MapPanel({ sites, focused, onSelect }: Props) {
     )
   }
 
-  if (focused) {
-    const [lng, lat] = center
-    return (
-      <div className="map-fallback site-map" aria-label="Simplified site boundary map">
-        <div className="map-grid" />
-        <svg className="site-polygon" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <polygon points={projectRing(focused.coordinates[0])} />
-        </svg>
-        <div className="site-map-label">
-          <span>Site boundary</span>
-          {lat.toFixed(2)}°, {lng.toFixed(2)}°
-        </div>
-        <div className="map-token-note">
-          <span>Basic map mode</span>
-          Satellite imagery is temporarily unavailable
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="map-fallback" aria-label="Simplified project map">
-      <div className="map-grid" />
-      <div className="continent c1" />
-      <div className="continent c2" />
-      <div className="continent c3" />
-      {sites.length === 0 && (
-        <div className="map-empty">
-          <MapIcon />
-          <strong>No sites to display</strong>
-          <span>Create a project and draw its first boundary.</span>
-        </div>
-      )}
-      {sites.map((site) => {
-        const [lng, lat] = centroid(site.geometry)
-        return (
-          <button
-            className="fallback-pin"
-            key={site.properties.id}
-            style={{ left: `${((lng + 180) / 360) * 100}%`, top: `${((90 - lat) / 180) * 100}%` }}
-            onClick={() => onSelect?.(site)}
-            aria-label={`Open ${site.properties.name}`}
-          >
-            <span>
-              {site.properties.project}
-              <small>{site.properties.name}</small>
-            </span>
-          </button>
-        )
-      })}
-      <div className="map-token-note">
-        <span>Basic map mode</span>
-        Satellite imagery is temporarily unavailable
-      </div>
+    <div className="map-fallback map-unavailable" role="status">
+      <MapIcon />
+      <strong>{sites.length ? 'Map imagery unavailable' : 'No sites to display'}</strong>
+      <span>
+        {sites.length
+          ? token
+            ? 'Mapbox could not load. Site data remains available below.'
+            : 'Add VITE_MAPBOX_TOKEN to view exact site boundaries.'
+          : 'Create a project and draw its first exact boundary.'}
+      </span>
     </div>
   )
 }

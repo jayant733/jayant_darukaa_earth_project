@@ -7,7 +7,13 @@ function chartLib() {
   return module.default ?? Highcharts
 }
 
-function ChartFrame({ options }: { options: Highcharts.Options }) {
+function ChartFrame({
+  options,
+  description,
+}: {
+  options: Highcharts.Options
+  description: string
+}) {
   const host = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
 
@@ -27,7 +33,7 @@ function ChartFrame({ options }: { options: Highcharts.Options }) {
   }, [options])
 
   if (failed) return <p className="chart-error">This chart is temporarily unavailable.</p>
-  return <div ref={host} />
+  return <div ref={host} role="img" aria-label={description} />
 }
 
 function sharedOptions(categories: string[]): Highcharts.Options {
@@ -58,6 +64,8 @@ function sharedOptions(categories: string[]): Highcharts.Options {
 }
 
 export function AnalyticsCharts({ id, series }: { id: string; series: SeriesPoint[] }) {
+  const [rangeYears, setRangeYears] = useState<number | 'all'>('all')
+
   if (series.length === 0) {
     return (
       <div className="charts-grid">
@@ -70,14 +78,26 @@ export function AnalyticsCharts({ id, series }: { id: string; series: SeriesPoin
     )
   }
 
-  const categories = series.map((point) => new Date(point.date).getFullYear().toString())
+  const latestTimestamp = Math.max(...series.map((point) => new Date(point.date).getTime()))
+  const visibleSeries =
+    rangeYears === 'all'
+      ? series
+      : series.filter(
+          (point) =>
+            new Date(point.date).getTime() >=
+            new Date(latestTimestamp).setFullYear(
+              new Date(latestTimestamp).getFullYear() - rangeYears,
+            ),
+        )
+  const categories = visibleSeries.map((point) => new Date(point.date).getFullYear().toString())
+  const period = `${categories[0]} to ${categories[categories.length - 1]}`
   const carbon: Highcharts.Options = {
     ...sharedOptions(categories),
     series: [
       {
         type: 'areaspline',
         name: 'Carbon',
-        data: series.map((point) => point.carbon),
+        data: visibleSeries.map((point) => point.carbon),
         color: '#1b4d3a',
         fillColor: {
           linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
@@ -98,36 +118,91 @@ export function AnalyticsCharts({ id, series }: { id: string; series: SeriesPoin
       {
         type: 'column',
         name: 'Biodiversity',
-        data: series.map((point) => point.biodiversity),
+        data: visibleSeries.map((point) => point.biodiversity),
         color: '#93aa87',
         borderWidth: 0,
         borderRadius: 2,
       },
     ],
   }
+  const restoration: Highcharts.Options = {
+    ...sharedOptions(categories),
+    yAxis: { ...sharedOptions(categories).yAxis, min: 0, max: 100 },
+    series: [
+      {
+        type: 'line',
+        name: 'Restoration progress',
+        data: visibleSeries.map((point) => point.progress),
+        color: '#4f7747',
+        marker: { enabled: true, radius: 3 },
+        lineWidth: 2,
+      },
+    ],
+  }
 
   return (
-    <div className="charts-grid">
-      <section className="chart-card">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">Performance over time</span>
-            <h3>Carbon sequestration</h3>
+    <section className="analytics-series">
+      <div className="analytics-range">
+        <span className="eyebrow">Chart period</span>
+        <label>
+          <span className="sr-only">Filter analytics by date range</span>
+          <select
+            value={rangeYears}
+            onChange={(event) =>
+              setRangeYears(event.target.value === 'all' ? 'all' : Number(event.target.value))
+            }
+          >
+            <option value="all">All observations</option>
+            <option value="1">Latest year</option>
+            <option value="3">Latest 3 years</option>
+            <option value="5">Latest 5 years</option>
+          </select>
+        </label>
+      </div>
+      <div className="charts-grid">
+        <section className="chart-card">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Performance over time</span>
+              <h3>Carbon sequestration</h3>
+            </div>
+            <span className="chart-unit">tCO₂e</span>
           </div>
-          <span className="chart-unit">tCO₂e</span>
-        </div>
-        <ChartFrame key={`${id}-carbon`} options={carbon} />
-      </section>
-      <section className="chart-card">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">Habitat quality</span>
-            <h3>Biodiversity trend</h3>
+          <ChartFrame
+            key={`${id}-carbon`}
+            options={carbon}
+            description={`Carbon sequestration from ${period}, ending at ${visibleSeries.at(-1)?.carbon.toLocaleString()} tonnes of carbon dioxide equivalent.`}
+          />
+        </section>
+        <section className="chart-card">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Habitat quality</span>
+              <h3>Biodiversity trend</h3>
+            </div>
+            <span className="chart-unit">INDEX / 100</span>
           </div>
-          <span className="chart-unit">INDEX / 100</span>
-        </div>
-        <ChartFrame key={`${id}-biodiversity`} options={biodiversity} />
-      </section>
-    </div>
+          <ChartFrame
+            key={`${id}-biodiversity`}
+            options={biodiversity}
+            description={`Biodiversity index from ${period}, ending at ${visibleSeries.at(-1)?.biodiversity} out of 100.`}
+          />
+        </section>
+        <section className="chart-card">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Delivery against plan</span>
+              <h3>Restoration progress</h3>
+            </div>
+            <span className="chart-unit">PERCENT</span>
+          </div>
+          <ChartFrame
+            key={`${id}-restoration`}
+            options={restoration}
+            description={`Restoration progress from ${period}, ending at ${visibleSeries.at(-1)?.progress} percent.`}
+          />
+        </section>
+      </div>
+    </section>
   )
 }

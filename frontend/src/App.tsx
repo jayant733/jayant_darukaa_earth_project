@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import {
   ArrowLeft,
   ArrowUpRight,
+  Activity,
   BarChart3,
+  Edit3,
   Globe2,
   Layers3,
   LayoutDashboard,
@@ -11,8 +13,10 @@ import {
   Menu,
   Plus,
   Search,
+  Save,
   Settings,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react'
 import { matchPath, useLocation, useNavigate } from 'react-router-dom'
@@ -21,8 +25,15 @@ import { AnalyticsCharts } from './AnalyticsCharts'
 import { MapPanel } from './MapPanel'
 import {
   clearSession,
+  createObservation,
   createProject,
+  createSite,
+  deleteObservation,
+  deleteProject,
+  deleteSite,
+  getHealth,
   getMe,
+  getPortfolioAnalytics,
   getProject,
   getProjects,
   getSite,
@@ -31,11 +42,18 @@ import {
   readSession,
   register,
   saveSession,
+  updateProject,
+  updateObservation,
+  updateSite,
+  type HealthStatus,
+  type PortfolioAnalytics,
+  type PolygonGeometry,
   type ProjectDetail,
   type ProjectSummary,
   type SiteDetail,
   type SiteFeature,
 } from './api'
+import { PolygonEditor } from './PolygonEditor'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -49,8 +67,8 @@ function healthLabel(score: number) {
 function LoginScreen({ onAuthenticated }: { onAuthenticated: (name: string) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('admin@darukaa.earth')
-  const [password, setPassword] = useState('darukaa-demo')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
@@ -275,15 +293,32 @@ function ProjectView({
   sites,
   back,
   onSite,
+  onChanged,
+  onDeleted,
 }: {
   id: string
   sites: SiteFeature[]
   back: () => void
   onSite: (siteId: string) => void
+  onChanged: (message: string) => void
+  onDeleted: () => void
 }) {
   const [project, setProject] = useState<ProjectDetail>()
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [addingSite, setAddingSite] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [editDraft, setEditDraft] = useState({
+    name: '',
+    country: '',
+    description: '',
+    status: 'planning',
+    carbon_target: 100000,
+  })
+  const [siteDraft, setSiteDraft] = useState<{ name: string; geometry?: PolygonGeometry }>({
+    name: '',
+  })
 
   useEffect(() => {
     let active = true
@@ -317,6 +352,71 @@ function ProjectView({
 
   const carbonShare = Math.min((project.carbon_tco2e / project.carbon_target) * 100, 100)
 
+  function beginEdit() {
+    setEditDraft({
+      name: project!.name,
+      country: project!.country,
+      description: project!.description,
+      status: project!.status,
+      carbon_target: project!.carbon_target,
+    })
+    setEditing(true)
+  }
+
+  async function saveProject(event: FormEvent) {
+    event.preventDefault()
+    setPending(true)
+    setError('')
+    try {
+      await updateProject(id, {
+        ...editDraft,
+        status: editDraft.status as 'planning' | 'active' | 'completed',
+      })
+      setEditing(false)
+      setAttempt((value) => value + 1)
+      onChanged('Project details updated.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update project.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function removeProject() {
+    if (
+      !window.confirm(
+        `Delete ${project!.name} and all of its sites and observations? This cannot be undone.`,
+      )
+    )
+      return
+    setPending(true)
+    try {
+      await deleteProject(id)
+      onDeleted()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete project.')
+      setPending(false)
+    }
+  }
+
+  async function addSite(event: FormEvent) {
+    event.preventDefault()
+    if (!siteDraft.geometry) return
+    setPending(true)
+    setError('')
+    try {
+      await createSite(id, { name: siteDraft.name, geometry: siteDraft.geometry })
+      setSiteDraft({ name: '' })
+      setAddingSite(false)
+      setAttempt((value) => value + 1)
+      onChanged('Site added to the project.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to add site.')
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <div className="detail-view">
       <button className="back-button" onClick={back}>
@@ -332,10 +432,85 @@ function ProjectView({
             {project.description || 'Landscape restoration monitored across all project sites.'}
           </p>
         </div>
-        <div className="status-badge">
-          <i /> {project.status} project
+        <div className="detail-actions">
+          <div className="status-badge">
+            <i /> {project.status} project
+          </div>
+          <button className="secondary" onClick={beginEdit}>
+            <Edit3 size={15} /> Edit
+          </button>
+          <button className="secondary danger" onClick={removeProject} disabled={pending}>
+            <Trash2 size={15} /> Delete
+          </button>
         </div>
       </div>
+      {editing && (
+        <form className="edit-panel" onSubmit={saveProject}>
+          <div className="section-heading">
+            <h3>Edit project</h3>
+            <button type="button" onClick={() => setEditing(false)}>
+              <X size={16} /> Close
+            </button>
+          </div>
+          <div className="form-grid">
+            <label>
+              Project name
+              <input
+                required
+                minLength={3}
+                maxLength={180}
+                value={editDraft.name}
+                onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })}
+              />
+            </label>
+            <label>
+              Country
+              <input
+                required
+                minLength={2}
+                maxLength={120}
+                value={editDraft.country}
+                onChange={(event) => setEditDraft({ ...editDraft, country: event.target.value })}
+              />
+            </label>
+            <label>
+              Status
+              <select
+                value={editDraft.status}
+                onChange={(event) => setEditDraft({ ...editDraft, status: event.target.value })}
+              >
+                <option value="planning">Planning</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+              </select>
+            </label>
+            <label>
+              Carbon target (tCO₂e)
+              <input
+                type="number"
+                min="1"
+                required
+                value={editDraft.carbon_target}
+                onChange={(event) =>
+                  setEditDraft({ ...editDraft, carbon_target: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label className="full">
+              Description
+              <textarea
+                value={editDraft.description}
+                onChange={(event) =>
+                  setEditDraft({ ...editDraft, description: event.target.value })
+                }
+              />
+            </label>
+          </div>
+          <button className="primary" disabled={pending}>
+            <Save size={15} /> {pending ? 'Saving…' : 'Save project'}
+          </button>
+        </form>
+      )}
       <section className="detail-metrics">
         <Metric
           label="Carbon stored"
@@ -371,7 +546,31 @@ function ProjectView({
             <span className="eyebrow">Geographical sites</span>
             <h3>Click a site for detailed analytics</h3>
           </div>
+          <button className="secondary" onClick={() => setAddingSite((value) => !value)}>
+            <Plus size={15} /> Add site
+          </button>
         </div>
+        {addingSite && (
+          <form className="edit-panel" onSubmit={addSite}>
+            <label className="field-label">
+              Site name
+              <input
+                required
+                minLength={2}
+                maxLength={180}
+                value={siteDraft.name}
+                onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })}
+              />
+            </label>
+            <PolygonEditor
+              value={siteDraft.geometry}
+              onChange={(geometry) => setSiteDraft({ ...siteDraft, geometry })}
+            />
+            <button className="primary" disabled={pending || !siteDraft.geometry}>
+              {pending ? 'Adding…' : 'Add site'}
+            </button>
+          </form>
+        )}
         <div className="site-chips">
           {projectSites.map((site) => (
             <button key={site.properties.id} onClick={() => onSite(site.properties.id)}>
@@ -386,10 +585,33 @@ function ProjectView({
   )
 }
 
-function SiteView({ id, back }: { id: string; back: (projectId: string) => void }) {
+function SiteView({
+  id,
+  back,
+  onChanged,
+  onDeleted,
+}: {
+  id: string
+  back: (projectId: string) => void
+  onChanged: (message: string) => void
+  onDeleted: (projectId: string) => void
+}) {
   const [site, setSite] = useState<SiteDetail>()
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [observing, setObserving] = useState(false)
+  const [editingObservationId, setEditingObservationId] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const [editDraft, setEditDraft] = useState<{ name: string; geometry?: PolygonGeometry }>({
+    name: '',
+  })
+  const [observation, setObservation] = useState({
+    observed_on: new Date().toISOString().slice(0, 10),
+    carbon_tco2e: 0,
+    biodiversity_index: 50,
+    restoration_progress: 0,
+  })
 
   useEffect(() => {
     let active = true
@@ -416,6 +638,83 @@ function SiteView({ id, back }: { id: string; back: (projectId: string) => void 
   }
   if (!site) return <LoadingState label="Loading site analytics" />
 
+  async function saveSite(event: FormEvent) {
+    event.preventDefault()
+    if (!editDraft.geometry) return
+    setPending(true)
+    setError('')
+    try {
+      await updateSite(id, { name: editDraft.name, geometry: editDraft.geometry })
+      setEditing(false)
+      setAttempt((value) => value + 1)
+      onChanged('Site details updated.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update site.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function removeSite() {
+    if (!window.confirm(`Delete ${site!.name} and all observations? This cannot be undone.`)) return
+    setPending(true)
+    try {
+      await deleteSite(id)
+      onDeleted(site!.project_id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete site.')
+      setPending(false)
+    }
+  }
+
+  async function addObservation(event: FormEvent) {
+    event.preventDefault()
+    setPending(true)
+    setError('')
+    try {
+      if (editingObservationId) {
+        await updateObservation(editingObservationId, observation)
+      } else {
+        await createObservation(id, observation)
+      }
+      setObserving(false)
+      setEditingObservationId(undefined)
+      setAttempt((value) => value + 1)
+      onChanged(editingObservationId ? 'Observation updated.' : 'Observation recorded.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to record observation.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  function beginObservationEdit(point: SiteDetail['series'][number]) {
+    if (!point.id) return
+    setObservation({
+      observed_on: point.date,
+      carbon_tco2e: point.carbon,
+      biodiversity_index: point.biodiversity,
+      restoration_progress: point.progress,
+    })
+    setEditingObservationId(point.id)
+    setObserving(true)
+  }
+
+  async function removeObservation(observationId: string) {
+    if (!window.confirm('Delete this field observation? This cannot be undone.')) return
+    setPending(true)
+    setError('')
+    try {
+      await deleteObservation(observationId)
+      setAttempt((value) => value + 1)
+      onChanged('Observation deleted.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete observation.')
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <div className="detail-view">
       <button className="back-button" onClick={() => back(site.project_id)}>
@@ -427,7 +726,139 @@ function SiteView({ id, back }: { id: string; back: (projectId: string) => void 
           <h1>{site.name}</h1>
           <p>Site-level carbon and habitat performance measured over time.</p>
         </div>
+        <div className="detail-actions">
+          <button
+            className="primary"
+            onClick={() => {
+              setEditingObservationId(undefined)
+              setObservation({
+                observed_on: new Date().toISOString().slice(0, 10),
+                carbon_tco2e: 0,
+                biodiversity_index: 50,
+                restoration_progress: 0,
+              })
+              setObserving((value) => !value)
+            }}
+          >
+            <Plus size={15} /> Add observation
+          </button>
+          <button
+            className="secondary"
+            onClick={() => {
+              setEditDraft({ name: site.name, geometry: site.geometry })
+              setEditing(true)
+            }}
+          >
+            <Edit3 size={15} /> Edit site
+          </button>
+          <button className="secondary danger" disabled={pending} onClick={removeSite}>
+            <Trash2 size={15} /> Delete
+          </button>
+        </div>
       </div>
+      {observing && (
+        <form className="edit-panel" onSubmit={addObservation}>
+          <div className="section-heading">
+            <h3>{editingObservationId ? 'Edit field observation' : 'Record field observation'}</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setObserving(false)
+                setEditingObservationId(undefined)
+              }}
+            >
+              <X size={16} /> Close
+            </button>
+          </div>
+          <div className="form-grid observation-grid">
+            <label>
+              Observation date
+              <input
+                type="date"
+                required
+                value={observation.observed_on}
+                onChange={(event) =>
+                  setObservation({ ...observation, observed_on: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              Carbon (tCO₂e)
+              <input
+                type="number"
+                min="0"
+                step="any"
+                required
+                value={observation.carbon_tco2e}
+                onChange={(event) =>
+                  setObservation({ ...observation, carbon_tco2e: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Biodiversity (/100)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="any"
+                required
+                value={observation.biodiversity_index}
+                onChange={(event) =>
+                  setObservation({ ...observation, biodiversity_index: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Restoration (%)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="any"
+                required
+                value={observation.restoration_progress}
+                onChange={(event) =>
+                  setObservation({
+                    ...observation,
+                    restoration_progress: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <button className="primary" disabled={pending}>
+            {pending ? 'Saving…' : editingObservationId ? 'Save observation' : 'Record observation'}
+          </button>
+        </form>
+      )}
+      {editing && (
+        <form className="edit-panel" onSubmit={saveSite}>
+          <div className="section-heading">
+            <h3>Edit site</h3>
+            <button type="button" onClick={() => setEditing(false)}>
+              <X size={16} /> Close
+            </button>
+          </div>
+          <label className="field-label">
+            Site name
+            <input
+              required
+              minLength={2}
+              maxLength={180}
+              value={editDraft.name}
+              onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })}
+            />
+          </label>
+          <PolygonEditor
+            value={editDraft.geometry}
+            onChange={(geometry) => setEditDraft({ ...editDraft, geometry })}
+          />
+          <button className="primary" disabled={pending || !editDraft.geometry}>
+            <Save size={15} /> {pending ? 'Saving…' : 'Save site'}
+          </button>
+        </form>
+      )}
       <section className="detail-metrics">
         <Metric label="Carbon stored" value={compact.format(site.carbon_tco2e)} suffix=" tCO₂e" />
         <Metric label="Biodiversity" value={`${site.biodiversity_index}`} suffix="/100" />
@@ -460,12 +891,52 @@ function SiteView({ id, back }: { id: string; back: (projectId: string) => void 
           </div>
         </section>
         <HealthCard
-          health={Math.round(site.biodiversity_index * 0.5 + site.progress * 0.5)}
+          health={site.health}
           biodiversity={site.biodiversity_index}
           progress={site.progress}
         />
       </div>
       <AnalyticsCharts id={site.id} series={site.series} />
+      {site.series.length > 0 && (
+        <section className="observation-history">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Source measurements</span>
+              <h3>Observation history</h3>
+            </div>
+          </div>
+          <div className="observation-table">
+            {site.series.map((point) => (
+              <div className="observation-row" key={point.id ?? point.date}>
+                <strong>{new Date(`${point.date}T00:00:00`).toLocaleDateString()}</strong>
+                <span>{point.carbon.toLocaleString()} tCO₂e</span>
+                <span>{point.biodiversity}/100 biodiversity</span>
+                <span>{point.progress}% restored</span>
+                <div>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => beginObservationEdit(point)}
+                    disabled={!point.id}
+                    aria-label={`Edit observation from ${point.date}`}
+                  >
+                    <Edit3 size={15} />
+                  </button>
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    onClick={() => point.id && removeObservation(point.id)}
+                    disabled={!point.id || pending}
+                    aria-label={`Delete observation from ${point.date}`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
@@ -617,6 +1088,58 @@ function WorkspaceSection({
   openSite: (site: SiteFeature) => void
   create: () => void
 }) {
+  const [health, setHealth] = useState<HealthStatus>()
+  const [healthError, setHealthError] = useState('')
+  const [healthPending, setHealthPending] = useState(false)
+  const [countryFilter, setCountryFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [portfolio, setPortfolio] = useState<PortfolioAnalytics>()
+
+  const checkHealth = useCallback(async () => {
+    setHealthPending(true)
+    setHealthError('')
+    try {
+      setHealth(await getHealth())
+    } catch (err) {
+      setHealth(undefined)
+      setHealthError(err instanceof Error ? err.message : 'Health check failed.')
+    } finally {
+      setHealthPending(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (section !== 'settings') return
+    const timer = window.setTimeout(() => void checkHealth(), 0)
+    return () => window.clearTimeout(timer)
+  }, [checkHealth, section])
+
+  useEffect(() => {
+    if (section !== 'analytics') return
+    let active = true
+    getPortfolioAnalytics()
+      .then((data) => active && setPortfolio(data))
+      .catch(() => active && setPortfolio({ projects }))
+    return () => {
+      active = false
+    }
+  }, [projects, section])
+
+  const analyticsSource = portfolio?.projects ?? projects
+  const countries = useMemo(
+    () => Array.from(new Set(analyticsSource.map((project) => project.country))).sort(),
+    [analyticsSource],
+  )
+  const analyticsProjects = useMemo(
+    () =>
+      analyticsSource.filter(
+        (project) =>
+          (countryFilter === 'all' || project.country === countryFilter) &&
+          (statusFilter === 'all' || project.status === statusFilter),
+      ),
+    [analyticsSource, countryFilter, statusFilter],
+  )
+
   if (section === 'settings') {
     return (
       <div className="overview">
@@ -627,10 +1150,19 @@ function WorkspaceSection({
             <p>Account and data connection status for this administrator workspace.</p>
           </div>
         </div>
-        <div className="settings-card">
-          <strong>Data connection</strong>
-          <span className="status-good">Connected</span>
-          <p>Projects, site geometry, and analytics are stored in PostgreSQL with PostGIS.</p>
+        <div className="settings-card" aria-live="polite">
+          <strong>API health</strong>
+          {healthPending && <span className="status-neutral">Checking…</span>}
+          {!healthPending && health && <span className="status-good">{health.status}</span>}
+          {!healthPending && healthError && <span className="status-bad">Unavailable</span>}
+          <p>
+            {health
+              ? `${health.service || 'Darukaa API'} responded successfully${health.database ? `; database is ${health.database}` : ''}.`
+              : healthError || 'Checking the live service status.'}
+          </p>
+          <button className="secondary" disabled={healthPending} onClick={checkHealth}>
+            <Activity size={15} /> Check again
+          </button>
         </div>
       </div>
     )
@@ -685,18 +1217,94 @@ function WorkspaceSection({
             <p>Compare health, carbon delivery, and biodiversity across projects.</p>
           </div>
         </div>
-        {projects.length ? (
+        <div className="analytics-filters" aria-label="Portfolio analytics filters">
+          <label>
+            Country
+            <select
+              value={countryFilter}
+              onChange={(event) => setCountryFilter(event.target.value)}
+            >
+              <option value="all">All countries</option>
+              {countries.map((country) => (
+                <option key={country}>{country}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="planning">Planning</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+            </select>
+          </label>
+          <span>
+            {analyticsProjects.length} of {analyticsSource.length} projects
+          </span>
+        </div>
+        {portfolio?.totals && analyticsSource.length > 0 && (
+          <section className="portfolio-stats analytics-totals">
+            <Metric
+              label="Protected area"
+              value={compact.format(portfolio.totals.area_ha)}
+              suffix=" ha"
+            />
+            <Metric
+              label="Carbon impact"
+              value={compact.format(portfolio.totals.carbon_tco2e)}
+              suffix=" tCO₂e"
+            />
+            <Metric
+              label="Biodiversity index"
+              value={`${portfolio.totals.biodiversity_index}`}
+              suffix="/100"
+            />
+            <Metric
+              label="Restoration"
+              value={`${portfolio.totals.restoration_progress}`}
+              suffix="%"
+            />
+          </section>
+        )}
+        {analyticsSource.length ? (
           <div className="analytics-directory">
-            {projects.map((project) => (
+            {analyticsProjects.map((project) => (
               <button key={project.id} onClick={() => openProject(project.id)}>
-                <span>{project.name}</span>
-                <strong>{project.health}</strong>
-                <i>
-                  <span style={{ width: `${project.health}%` }} />
-                </i>
-                <small>{healthLabel(project.health)}</small>
+                <span>
+                  <strong>{project.name}</strong>
+                  <small>
+                    {project.country} · {project.status}
+                  </small>
+                </span>
+                <b>
+                  {project.health}
+                  <small>/100 health</small>
+                </b>
+                <div
+                  className="analytics-bars"
+                  aria-label={`${project.name}: health ${project.health}, biodiversity ${project.biodiversity_index}, restoration ${project.progress} percent`}
+                >
+                  <i>
+                    <span style={{ width: `${project.health}%` }} />
+                  </i>
+                  <i>
+                    <span style={{ width: `${project.biodiversity_index}%` }} />
+                  </i>
+                  <i>
+                    <span style={{ width: `${project.progress}%` }} />
+                  </i>
+                </div>
+                <small>Health · Biodiversity · Restoration</small>
               </button>
             ))}
+            {analyticsProjects.length === 0 && (
+              <div className="state-panel">
+                <Search size={24} />
+                <h3>No projects match</h3>
+                <p>Change the country or status filters.</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="state-panel">
@@ -737,28 +1345,10 @@ function WorkspaceSection({
   )
 }
 
-const emptyDraft = { name: '', country: '', description: '', points: [] as [number, number][] }
+type DraftSite = { key: string; name: string; geometry?: PolygonGeometry }
 
-// The draw canvas is a local window, not the whole globe: a boundary drawn edge to edge
-// covers roughly 55km x 39km so areas land in the same range as real restoration sites.
-const WINDOW_LNG = 0.5
-const WINDOW_LAT = 0.35
-
-const COUNTRY_CENTERS: Record<string, [number, number]> = {
-  brazil: [-62.22, -3.46],
-  bangladesh: [89.18, 21.95],
-  'dr congo': [22.05, -0.68],
-  kenya: [35.58, -0.55],
-  indonesia: [114.46, 0.95],
-  'united states': [-120.1, 38.71],
-  india: [78.96, 20.59],
-  colombia: [-74.3, 4.57],
-  peru: [-75.02, -9.19],
-  tanzania: [34.89, -6.37],
-}
-
-function countryCenter(country: string): [number, number] {
-  return COUNTRY_CENTERS[country.trim().toLowerCase()] ?? [12.35, 6.42]
+function newDraftSite(index: number): DraftSite {
+  return { key: crypto.randomUUID(), name: `Site ${String(index).padStart(2, '0')}` }
 }
 
 function CreateWizard({
@@ -769,43 +1359,26 @@ function CreateWizard({
   onCreated: (projectId: string, projectName: string) => void
 }) {
   const [step, setStep] = useState(1)
-  const [draft, setDraft] = useState(emptyDraft)
+  const [draft, setDraft] = useState({
+    name: '',
+    country: '',
+    description: '',
+    carbon_target: 100000,
+    sites: [newDraftSite(1)],
+  })
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
-
-  // Points are stored as canvas fractions and projected to coordinates only on submit,
-  // so the preview and the stored geometry always agree.
-  function addPoint(event: React.MouseEvent<HTMLDivElement>) {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = (event.clientX - rect.left) / rect.width
-    const y = (event.clientY - rect.top) / rect.height
-    setDraft((current) => ({ ...current, points: [...current.points, [x, y]] }))
-  }
-
-  function toCoordinates(points: [number, number][]): [number, number][] {
-    const [centerLng, centerLat] = countryCenter(draft.country)
-    return points.map(([x, y]) => [
-      Number((centerLng + (x - 0.5) * WINDOW_LNG).toFixed(5)),
-      Number((centerLat - (y - 0.5) * WINDOW_LAT).toFixed(5)),
-    ])
-  }
 
   async function submit() {
     setPending(true)
     setError('')
     try {
-      const ring = toCoordinates(draft.points)
-      ring.push(ring[0])
       const result = await createProject({
         name: draft.name,
         country: draft.country,
         description: draft.description,
-        sites: [
-          {
-            name: `${draft.country || draft.name} Site 01`,
-            geometry: { type: 'Polygon', coordinates: [ring] },
-          },
-        ],
+        carbon_target: draft.carbon_target,
+        sites: draft.sites.map((site) => ({ name: site.name, geometry: site.geometry! })),
       })
       setStep(4)
       onCreated(result.id, draft.name)
@@ -816,16 +1389,25 @@ function CreateWizard({
     }
   }
 
-  const canContinue =
-    step === 1 ? draft.name.length > 2 && draft.country.length > 1 : draft.points.length >= 3
+  const projectValid =
+    draft.name.trim().length >= 3 && draft.country.trim().length >= 2 && draft.carbon_target > 0
+  const sitesValid =
+    draft.sites.length > 0 &&
+    draft.sites.every((site) => site.name.trim().length >= 2 && site.geometry)
+  const canContinue = step === 1 ? projectValid : step === 2 ? Boolean(sitesValid) : true
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-project-title"
+    >
       <div className="wizard">
         <header>
           <div>
             <span className="eyebrow">New project</span>
-            <h2>Define a landscape</h2>
+            <h2 id="create-project-title">Define a landscape</h2>
           </div>
           <button onClick={close} aria-label="Close">
             <X />
@@ -842,7 +1424,6 @@ function CreateWizard({
         <div className="wizard-content">
           {step === 1 && (
             <>
-              <span className="eyebrow">01 — Fundamentals</span>
               <h3>Tell us about the project</h3>
               <div className="form-grid">
                 <label>
@@ -877,6 +1458,16 @@ function CreateWizard({
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                   />
                 </label>
+                <label>
+                  Carbon target (tCO₂e)
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={draft.carbon_target}
+                    onChange={(e) => setDraft({ ...draft, carbon_target: Number(e.target.value) })}
+                  />
+                </label>
               </div>
               {!canContinue && (
                 <p className="form-hint">Project name and country are required to continue.</p>
@@ -885,44 +1476,78 @@ function CreateWizard({
           )}
           {step === 2 && (
             <div className="draw-step">
-              <span className="eyebrow">02 — Geospatial sites</span>
-              <h3>Draw the project boundary</h3>
-              <p>
-                Click to place at least three points around {draft.country || 'the project area'}.
-                The polygon is stored in PostGIS and its area is computed server-side.
-              </p>
-              <div className="draw-canvas" onClick={addPoint}>
-                {draft.points.length > 2 && (
-                  <svg className="draw-preview" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <polygon
-                      points={draft.points.map(([x, y]) => `${x * 100},${y * 100}`).join(' ')}
-                    />
-                  </svg>
-                )}
-                {draft.points.map(([x, y], index) => (
-                  <i
-                    key={`${x}-${y}-${index}`}
-                    className="draw-point"
-                    style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
-                  />
-                ))}
-                <span>
-                  {draft.points.length === 0
-                    ? 'Click points to define a polygon'
-                    : `${draft.points.length} points placed`}
-                </span>
-              </div>
-              {draft.points.length > 0 && (
+              <div className="section-heading">
+                <div>
+                  <h3>Map project sites</h3>
+                  <p>Draw exact boundaries or enter valid GeoJSON. Area is computed server-side.</p>
+                </div>
                 <button
-                  className="text-link"
-                  onClick={() => setDraft({ ...draft, points: [] })}
+                  className="secondary"
                   type="button"
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      sites: [...draft.sites, newDraftSite(draft.sites.length + 1)],
+                    })
+                  }
                 >
-                  Clear polygon
+                  <Plus size={15} /> Add another site
                 </button>
-              )}
-              {draft.points.length > 0 && draft.points.length < 3 && (
-                <p className="form-hint">Add at least three points to close the boundary.</p>
+              </div>
+              <div className="draft-sites">
+                {draft.sites.map((site, index) => (
+                  <section className="draft-site" key={site.key}>
+                    <div className="draft-site-title">
+                      <strong>Site {index + 1}</strong>
+                      {draft.sites.length > 1 && (
+                        <button
+                          type="button"
+                          className="text-link danger"
+                          onClick={() =>
+                            setDraft({
+                              ...draft,
+                              sites: draft.sites.filter((item) => item.key !== site.key),
+                            })
+                          }
+                        >
+                          <Trash2 size={14} /> Remove site
+                        </button>
+                      )}
+                    </div>
+                    <label className="field-label">
+                      Site name
+                      <input
+                        required
+                        minLength={2}
+                        maxLength={180}
+                        value={site.name}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            sites: draft.sites.map((item) =>
+                              item.key === site.key ? { ...item, name: event.target.value } : item,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <PolygonEditor
+                      label={`${site.name || `Site ${index + 1}`} boundary`}
+                      value={site.geometry}
+                      onChange={(geometry) =>
+                        setDraft({
+                          ...draft,
+                          sites: draft.sites.map((item) =>
+                            item.key === site.key ? { ...item, geometry } : item,
+                          ),
+                        })
+                      }
+                    />
+                  </section>
+                ))}
+              </div>
+              {!sitesValid && (
+                <p className="form-hint">Every site needs a name and a valid closed polygon.</p>
               )}
             </div>
           )}
@@ -932,7 +1557,9 @@ function CreateWizard({
               <span className="eyebrow">Ready for review</span>
               <h3>{draft.name}</h3>
               <p>
-                {draft.country} · 1 geographical site · {draft.points.length} boundary points
+                {draft.country} · {draft.sites.length} geographical{' '}
+                {draft.sites.length === 1 ? 'site' : 'sites'} ·{' '}
+                {compact.format(draft.carbon_target)} tCO₂e target
               </p>
               {error && <p className="form-error">{error}</p>}
             </div>
@@ -1152,6 +1779,15 @@ function App() {
             sites={sites}
             back={() => navigate('/projects')}
             onSite={(id) => navigate(`/sites/${id}`)}
+            onChanged={(message) => {
+              reload()
+              setToast({ kind: 'success', message })
+            }}
+            onDeleted={() => {
+              reload()
+              navigate('/projects')
+              setToast({ kind: 'success', message: 'Project deleted.' })
+            }}
           />
         )}
         {routeFound && !error && !loading && siteMatch?.params.id && (
@@ -1159,6 +1795,15 @@ function App() {
             key={siteMatch.params.id}
             id={siteMatch.params.id}
             back={(projectId) => navigate(`/projects/${projectId}`)}
+            onChanged={(message) => {
+              reload()
+              setToast({ kind: 'success', message })
+            }}
+            onDeleted={(projectId) => {
+              reload()
+              navigate(`/projects/${projectId}`)
+              setToast({ kind: 'success', message: 'Site deleted.' })
+            }}
           />
         )}
         {routeFound && !error && !loading && section && (
@@ -1185,9 +1830,7 @@ function App() {
               <div className="map-overlay">
                 <span className="eyebrow">Live portfolio</span>
                 <strong>{sites.length} monitored sites</strong>
-                <div>
-                  <i className="active-dot" /> Connected to PostGIS
-                </div>
+                <div>Loaded from the live project API</div>
               </div>
             </section>
             <section className="portfolio-stats">
